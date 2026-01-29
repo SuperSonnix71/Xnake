@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Xnake</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="game-container">
+        <div class="header">
+            <h1 class="title">🐍 XNAKE</h1>
+            <div class="info-bar">
+                <div class="score-container">
+                    <span class="label">Score:</span>
+                    <span id="score" class="value">0</span>
+                </div>
+                <div class="high-score-container">
+                    <span class="label">Best:</span>
+                    <span id="highScore" class="value">0</span>
+                </div>
+                <div class="speed-container">
+                    <span class="label">Speed:</span>
+                    <span id="speed" class="value">1</span>
+                </div>
+            </div>
+            <div class="player-info">
+                <span class="player-name">Player: <strong id="playerName">Guest</strong></span>
+                <span class="player-rank" id="playerRank"></span>
+            </div>
+        </div>
+        
+        <div class="game-wrapper">
+            <canvas id="gameCanvas" width="600" height="600"></canvas>
+            
+            <!-- Registration Screen -->
+            <div id="registrationScreen" class="modal-screen">
+                <div class="modal-content">
+                    <h2 class="modal-title">Welcome to Xnake!</h2>
+                    <p class="modal-text">Enter your username to start playing</p>
+                    <form id="registrationForm">
+                        <input 
+                            type="text" 
+                            id="usernameInput" 
+                            class="input-field"
+                            placeholder="Enter username"
+                            minlength="3"
+                            maxlength="20"
+                            pattern="[a-zA-Z0-9_]+"
+                            required
+                        />
+                        <p class="input-hint">3-20 characters (letters, numbers, _ only)</p>
+                        <p id="registrationError" class="error-message hidden"></p>
+                        <button type="submit" class="btn btn-primary">Start Playing</button>
+                    </form>
+                </div>
+            </div>
+            
+            <!-- Game Over Screen -->
+            <div id="gameOver" class="game-over hidden">
+                <div class="game-over-content">
+                    <h2 class="game-over-title">Game Over!</h2>
+                    <p class="final-score">Final Score: <span id="finalScore">0</span></p>
+                    <p id="newBestMessage" class="new-best hidden">🎉 New Personal Best!</p>
+                    <p class="rank-display">Your Rank: <span id="gameOverRank">-</span></p>
+                    <button id="restartBtn" class="btn">Play Again</button>
+                    <button id="viewHallOfFameBtn" class="btn btn-secondary">Hall of Fame</button>
+                </div>
+            </div>
+            
+            <!-- Start Screen -->
+            <div id="startScreen" class="start-screen">
+                <div class="start-content">
+                    <h2 class="start-title">Ready to Play?</h2>
+                    <p class="instructions">
+                        Use <strong>Arrow Keys</strong> or <strong>WASD</strong> to control the snake<br>
+                        Eat the glowing food to grow and score points<br>
+                        Don't hit the walls or yourself!
+                    </p>
+                    <button id="startBtn" class="btn btn-primary">Start Game</button>
+                    <button id="hallOfFameBtn" class="btn btn-secondary">Hall of Fame</button>
+                </div>
+            </div>
+
+            <!-- Hall of Fame Screen -->
+            <div id="hallOfFameScreen" class="modal-screen hidden">
+                <div class="modal-content hall-of-fame-content">
+                    <h2 class="modal-title">🏆 Hall of Fame</h2>
+                    <div id="hallOfFameList" class="hall-of-fame-list">
+                        <p class="loading">Loading...</p>
+                    </div>
+                    <button id="closeHallOfFameBtn" class="btn">Close</button>
+                </div>
+            </div>
+        </div>
+        
+        <div class="controls">
+            <div class="control-info">
+                <span class="control-key">↑ ↓ ← →</span>
+                <span>or</span>
+                <span class="control-key">W A S D</span>
+                <span>to move</span>
+            </div>
+            <div class="control-info">
+                <span class="control-key">SPACE</span>
+                <span>to pause</span>
+            </div>
+        </div>
+        
+        <div class="developer-credit">
+            Developed by Sonny Mir
+        </div>
+    </div>
+    
+    <script src="fingerprint.js"></script>
+    <script src="game.js"></script>
+</body>
+</html>

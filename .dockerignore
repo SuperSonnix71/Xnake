@@ -1,0 +1,14 @@
+node_modules
+npm-debug.log
+.git
+.gitignore
+.env
+*.md
+.vscode
+.DS_Store
+.python-version
+.ruff_cache
+.venv
+*.py
+Makefile
+run.sh
