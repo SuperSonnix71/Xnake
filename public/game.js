@@ -498,7 +498,7 @@
                 hallOfShameList.innerHTML = data.hallOfShame.map((entry) => {
                     const date = new Date(entry.caught_at).toLocaleDateString();
                     const time = new Date(entry.caught_at).toLocaleTimeString();
-                    const maskedIP = entry.ip_address ? maskIP(entry.ip_address) : 'Unknown';
+                    const ipAddress = entry.ip_address || 'Unknown';
                     const repeatOffender = entry.offense_count > 3;
                     
                     const cheatTypeLabels = {
@@ -532,7 +532,7 @@
                                 </div>
                                 <div class="shame-info">
                                     <span class="shame-label">IP Address:</span>
-                                    <span class="shame-value ip-address">${maskedIP}</span>
+                                    <span class="shame-value ip-address">${ipAddress}</span>
                                 </div>
                             </div>
                             <div class="shame-reason">${entry.reason}</div>
@@ -550,22 +550,6 @@
     
     function closeHallOfShame() {
         document.getElementById('hallOfShameScreen').classList.add('hidden');
-    }
-    
-    function maskIP(ip) {
-        if (!ip || ip === 'unknown') return 'Unknown';
-        
-        const parts = ip.split('.');
-        if (parts.length === 4) {
-            return `${parts[0]}.${parts[1]}.xxx.xxx`;
-        }
-        
-        if (ip.includes(':')) {
-            const parts = ip.split(':');
-            return parts.slice(0, 3).join(':') + ':xxxx:xxxx:xxxx';
-        }
-        
-        return 'Unknown';
     }
     
     if (!CanvasRenderingContext2D.prototype.roundRect) {
