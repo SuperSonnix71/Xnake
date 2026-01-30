@@ -80,6 +80,7 @@ function validateGameReplay(moves, seed, expectedScore, expectedFoodEaten, gameD
   let food = spawnFood();
   let moveIndex = 0;
   let frameCount = 0;
+  let simulatedTime = 0; // Track time accurately during simulation
   
   const directions = [
     { x: 0, y: -1 },  // 0: UP
@@ -103,6 +104,9 @@ function validateGameReplay(moves, seed, expectedScore, expectedFoodEaten, gameD
   
   while (frameCount < maxFrames) {
     frameCount++;
+    
+    // Add current speed to simulated time (this frame's duration)
+    simulatedTime += currentSpeed;
     
     // Apply direction change if there's a move for this frame
     if (moveIndex < moves.length && moves[moveIndex].f === frameCount) {
@@ -192,22 +196,7 @@ function validateGameReplay(moves, seed, expectedScore, expectedFoodEaten, gameD
     }
   }
   
-  // Calculate simulated duration based on frame count
-  let simulatedTime = 0;
-  let tempSpeed = INITIAL_SPEED;
-  let tempFoodCount = 0;
-  
-  for (let i = 0; i < frameCount; i++) {
-    simulatedTime += tempSpeed;
-    // Note: This is approximate since we don't track exactly when speed changed
-    if (tempFoodCount < foodEaten) {
-      tempFoodCount++;
-      if (tempSpeed > MIN_SPEED) {
-        tempSpeed -= SPEED_INCREASE;
-      }
-    }
-  }
-  
+  // Calculate simulated duration from accumulated time
   const simulatedDuration = Math.floor(simulatedTime / 1000);
   
   // Summary
@@ -250,7 +239,9 @@ function validateGameReplay(moves, seed, expectedScore, expectedFoodEaten, gameD
   
   // Duration validation with tolerance
   const durationDiff = Math.abs(simulatedDuration - gameDuration);
-  const maxDurationDiff = Math.max(5, gameDuration * 0.15);
+  // More generous tolerance: 20% or minimum 10 seconds
+  // Accounts for: network lag, browser performance, frame rate variations, pause time
+  const maxDurationDiff = Math.max(10, gameDuration * 0.20);
   
   if (durationDiff > maxDurationDiff) {
     log.errors.push(`Duration mismatch: simulated ${simulatedDuration}s, reported ${gameDuration}s`);
