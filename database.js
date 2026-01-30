@@ -328,8 +328,8 @@ const cheaterOps = {
                 c.caught_at,
                 (SELECT COUNT(*) FROM cheaters WHERE player_id = c.player_id) as offense_count
             FROM cheaters c
-            WHERE c.caught_at = (
-                SELECT MAX(caught_at) FROM cheaters WHERE player_id = c.player_id
+            WHERE c.attempted_score = (
+                SELECT MAX(attempted_score) FROM cheaters WHERE player_id = c.player_id
             )
             GROUP BY c.player_id
             ORDER BY c.caught_at DESC
