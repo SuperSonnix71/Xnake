@@ -28,10 +28,24 @@ function seededRandom(seed) {
   return x - Math.floor(x);
 }
 
-function validateGameReplay(moves, seed, expectedScore, expectedFoodEaten) {
+function validateGameReplay(moves, seed, expectedScore, expectedFoodEaten, gameDuration) {
   const GRID_SIZE = 30;
   const INITIAL_SPEED = 150;
   const SPEED_INCREASE = 3;
+  const MIN_SPEED = 50;
+  const MIN_MOVE_INTERVAL = 80;
+  
+  if (moves.length > 0) {
+    for (let i = 1; i < moves.length; i++) {
+      const timeBetweenMoves = moves[i].t - moves[i-1].t;
+      if (timeBetweenMoves < MIN_MOVE_INTERVAL) {
+        return { 
+          valid: false, 
+          reason: `Moves too fast: ${timeBetweenMoves}ms between moves (min ${MIN_MOVE_INTERVAL}ms)` 
+        };
+      }
+    }
+  }
   
   const center = Math.floor(GRID_SIZE / 2);
   let snake = [
@@ -44,6 +58,7 @@ function validateGameReplay(moves, seed, expectedScore, expectedFoodEaten) {
   let score = 0;
   let foodEaten = 0;
   let currentSpeed = INITIAL_SPEED;
+  let updateCount = 0;
   
   function spawnFood() {
     let newFood;
@@ -64,7 +79,6 @@ function validateGameReplay(moves, seed, expectedScore, expectedFoodEaten) {
   
   let food = spawnFood();
   let moveIndex = 0;
-  let lastMoveTime = 0;
   let gameTime = 0;
   
   const directions = [
@@ -85,6 +99,7 @@ function validateGameReplay(moves, seed, expectedScore, expectedFoodEaten) {
     
     const updateInterval = currentSpeed;
     gameTime += updateInterval;
+    updateCount++;
     
     const head = { x: snake[0].x + direction.x, y: snake[0].y + direction.y };
     
@@ -103,7 +118,7 @@ function validateGameReplay(moves, seed, expectedScore, expectedFoodEaten) {
       foodEaten++;
       food = spawnFood();
       
-      if (currentSpeed > 50) {
+      if (currentSpeed > MIN_SPEED) {
         currentSpeed -= SPEED_INCREASE;
       }
     } else {
@@ -113,6 +128,17 @@ function validateGameReplay(moves, seed, expectedScore, expectedFoodEaten) {
     if (foodEaten > 1000) {
       return { valid: false, reason: 'Too many food eaten' };
     }
+  }
+  
+  const simulatedDuration = Math.floor(gameTime / 1000);
+  const durationDiff = Math.abs(simulatedDuration - gameDuration);
+  const maxDurationDiff = Math.max(5, gameDuration * 0.15);
+  
+  if (durationDiff > maxDurationDiff) {
+    return {
+      valid: false,
+      reason: `Game duration mismatch: client reported ${gameDuration}s, server simulated ${simulatedDuration}s (diff: ${durationDiff}s, max allowed: ${Math.floor(maxDurationDiff)}s)`
+    };
   }
   
   if (Math.abs(score - expectedScore) > 0) {
@@ -352,7 +378,7 @@ app.post('/api/score', (req, res) => {
     return { d, t };
   }).filter(m => !isNaN(m.d) && !isNaN(m.t));
 
-  const validation = validateGameReplay(parsedMoves, seed, score, foodEaten);
+  const validation = validateGameReplay(parsedMoves, seed, score, foodEaten, gameDuration);
   
   if (!validation.valid) {
     const player = playerOps.findById(req.session.playerId);
