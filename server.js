@@ -1,6 +1,7 @@
 const express = require('express');
 const session = require('express-session');
 const path = require('path');
+const fs = require('fs');
 const { initializeDatabase, playerOps, scoreOps, statsOps, cheaterOps, closeDatabase } = require('./database');
 
 const app = express();
@@ -8,6 +9,28 @@ const PORT = process.env.PORT || 3000;
 
 const rateLimit = new Map();
 const activeSessions = new Map();
+
+// Persistent logging setup
+const gameLogPath = path.join(__dirname, 'game_activity.log');
+const cheatLogPath = path.join(__dirname, 'cheat_detection.log');
+
+function logToFile(filePath, message) {
+  const timestamp = new Date().toISOString();
+  const logEntry = `[${timestamp}] ${message}\n`;
+  fs.appendFileSync(filePath, logEntry);
+}
+
+function logGameActivity(player, score, result, details = '') {
+  const message = `Player: ${player} | Score: ${score} | Result: ${result} | ${details}`;
+  logToFile(gameLogPath, message);
+  console.log(`[GAME] ${message}`);
+}
+
+function logCheatDetection(player, ip, cheatType, score, reason, details = '') {
+  const message = `Player: ${player} | IP: ${ip} | Type: ${cheatType} | Score: ${score} | Reason: ${reason} | ${details}`;
+  logToFile(cheatLogPath, message);
+  console.log(`[CHEAT] ${message}`);
+}
 
 function getClientIP(req) {
   return req.headers['x-forwarded-for']?.split(',')[0].trim() || 
@@ -475,6 +498,14 @@ app.post('/api/score', (req, res) => {
     if (gameDuration < minDuration) {
       const player = playerOps.findById(req.session.playerId);
       const ipAddress = getClientIP(req);
+      logCheatDetection(
+        player.username,
+        ipAddress,
+        'speed_hack',
+        score,
+        `Duration: ${gameDuration}s < Min: ${minDuration}s`,
+        `Speed Level: ${speedLevel} | Food: ${foodEaten || 'N/A'}`
+      );
       console.log(`[CHEAT DETECTED] Player: ${player.username} - Duration: ${gameDuration}s, Speed: ${speedLevel} (too fast, min: ${minDuration}s)`);
       cheaterOps.record(req.session.playerId, player.username, ipAddress, fingerprint, 'speed_hack', score, `Game too fast: ${gameDuration}s (min ${minDuration}s)`);
       return res.status(400).json({ error: 'Game completed too quickly' });
@@ -489,6 +520,14 @@ app.post('/api/score', (req, res) => {
   if (!session || session.seed !== seed) {
     const player = playerOps.findById(req.session.playerId);
     const ipAddress = getClientIP(req);
+    logCheatDetection(
+      player.username,
+      ipAddress,
+      'invalid_session',
+      score,
+      session ? 'Seed mismatch' : 'No active session',
+      `Sent seed: ${seed} | Expected seed: ${session?.seed || 'none'}`
+    );
     console.log(`[CHEAT DETECTED] Player: ${player.username} - Invalid or missing game session`);
     cheaterOps.record(req.session.playerId, player.username, ipAddress, fingerprint, 'invalid_session', score, 'Invalid or missing game session');
     return res.status(400).json({ error: 'Invalid game session' });
@@ -538,6 +577,16 @@ app.post('/api/score', (req, res) => {
     const player = playerOps.findById(req.session.playerId);
     const ipAddress = getClientIP(req);
     
+    const gapDetails = JSON.stringify(pauseCheck.suspiciousGaps);
+    logCheatDetection(
+      player.username, 
+      ipAddress, 
+      'pause_abuse', 
+      score, 
+      `${pauseCheck.gapCount} gaps totaling ${pauseCheck.totalSuspiciousTime}s`,
+      `Duration: ${gameDuration}s | Gaps: ${gapDetails}`
+    );
+    
     console.log(`\n========== CHEAT DETECTED: PAUSE ABUSE ==========`);
     console.log(`Player: ${player.username} (ID: ${player.id})`);
     console.log(`IP Address: ${ipAddress}`);
@@ -568,6 +617,16 @@ app.post('/api/score', (req, res) => {
     const player = playerOps.findById(req.session.playerId);
     const ipAddress = getClientIP(req);
     
+    // Log to persistent file
+    logCheatDetection(
+      player.username,
+      ipAddress,
+      'replay_fail',
+      score,
+      validation.reason,
+      `Food: ${foodEaten} | Duration: ${gameDuration}s | Frames: ${totalFrames} | Summary: ${JSON.stringify(validation.log.summary)}`
+    );
+    
     // Comprehensive logging
     console.log(`\n========== CHEAT DETECTION ==========`);
     console.log(`Player: ${player.username} (ID: ${player.id})`);
@@ -596,7 +655,14 @@ app.post('/api/score', (req, res) => {
   
   // Log successful validation for high scores
   if (score >= 100) {
-    console.log(`[VALID SCORE] Player: ${playerOps.findById(req.session.playerId).username} - Score: ${score}, Food: ${foodEaten}, Duration: ${gameDuration}s`);
+    const player = playerOps.findById(req.session.playerId);
+    logGameActivity(
+      player.username,
+      score,
+      'VALID',
+      `Food: ${foodEaten} | Duration: ${gameDuration}s | Speed Level: ${speedLevel} | Moves: ${parsedMoves.length}`
+    );
+    console.log(`[VALID SCORE] Player: ${player.username} - Score: ${score}, Food: ${foodEaten}, Duration: ${gameDuration}s`);
   }
 
   activeSessions.delete(req.session.playerId);
