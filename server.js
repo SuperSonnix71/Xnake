@@ -41,7 +41,6 @@ function validateGameReplay(moves, seed, expectedScore, expectedFoodEaten, gameD
   const SPEED_INCREASE = 3;
   const MIN_SPEED = 50;
   
-  // Logging setup
   const log = {
     frames: [],
     summary: {},
@@ -80,16 +79,15 @@ function validateGameReplay(moves, seed, expectedScore, expectedFoodEaten, gameD
   let food = spawnFood();
   let moveIndex = 0;
   let frameCount = 0;
-  let simulatedTime = 0; // Track time accurately during simulation
+  let simulatedTime = 0;
   
   const directions = [
-    { x: 0, y: -1 },  // 0: UP
-    { x: 1, y: 0 },   // 1: RIGHT
-    { x: 0, y: 1 },   // 2: DOWN
-    { x: -1, y: 0 }   // 3: LEFT
+    { x: 0, y: -1 },
+    { x: 1, y: 0 },
+    { x: 0, y: 1 },
+    { x: -1, y: 0 }
   ];
   
-  // Log initial state
   log.frames.push({
     frame: 0,
     snake: JSON.parse(JSON.stringify(snake)),
@@ -99,22 +97,18 @@ function validateGameReplay(moves, seed, expectedScore, expectedFoodEaten, gameD
     foodEaten
   });
   
-  // Frame-by-frame simulation
-  const maxFrames = totalFrames ? totalFrames + 10 : 10000; // Allow slight buffer
+  const maxFrames = totalFrames ? totalFrames + 10 : 10000;
   
   while (frameCount < maxFrames) {
     frameCount++;
     
-    // Add current speed to simulated time (this frame's duration)
     simulatedTime += currentSpeed;
     
-    // Apply direction change if there's a move for this frame
     if (moveIndex < moves.length && moves[moveIndex].f === frameCount) {
       const newDir = directions[moves[moveIndex].d];
       if (newDir && (newDir.x !== -direction.x || newDir.y !== -direction.y)) {
         direction = newDir;
         
-        // Log direction change
         if (frameCount % 10 === 0 || foodEaten < 3) {
           log.frames.push({
             frame: frameCount,
@@ -127,10 +121,8 @@ function validateGameReplay(moves, seed, expectedScore, expectedFoodEaten, gameD
       moveIndex++;
     }
     
-    // Move snake
     const head = { x: snake[0].x + direction.x, y: snake[0].y + direction.y };
     
-    // Check wall collision
     if (head.x < 0 || head.x >= GRID_SIZE || head.y < 0 || head.y >= GRID_SIZE) {
       log.frames.push({
         frame: frameCount,
@@ -142,7 +134,6 @@ function validateGameReplay(moves, seed, expectedScore, expectedFoodEaten, gameD
       break;
     }
     
-    // Check self collision
     if (snake.some(seg => seg.x === head.x && seg.y === head.y)) {
       log.frames.push({
         frame: frameCount,
@@ -156,12 +147,10 @@ function validateGameReplay(moves, seed, expectedScore, expectedFoodEaten, gameD
     
     snake.unshift(head);
     
-    // Check food collision
     if (head.x === food.x && head.y === food.y) {
       score += 10;
       foodEaten++;
       
-      // Log food eaten
       log.frames.push({
         frame: frameCount,
         action: 'food_eaten',
@@ -189,17 +178,14 @@ function validateGameReplay(moves, seed, expectedScore, expectedFoodEaten, gameD
       };
     }
     
-    // Safety: break if simulation is too long
     if (frameCount >= 10000) {
       log.errors.push('Simulation exceeded maximum frames');
       break;
     }
   }
   
-  // Calculate simulated duration from accumulated time
   const simulatedDuration = Math.floor(simulatedTime / 1000);
   
-  // Summary
   log.summary = {
     totalFrames: frameCount,
     finalScore: score,
@@ -212,11 +198,9 @@ function validateGameReplay(moves, seed, expectedScore, expectedFoodEaten, gameD
     totalMovesProvided: moves.length
   };
   
-  // Validation with tolerance
   const scoreDiff = Math.abs(score - expectedScore);
   const foodDiff = Math.abs(foodEaten - expectedFoodEaten);
   
-  // Allow small tolerance for very short games (edge cases in timing)
   const scoreTolerance = foodEaten <= 2 ? 20 : 0;
   
   if (scoreDiff > scoreTolerance) {
@@ -237,10 +221,7 @@ function validateGameReplay(moves, seed, expectedScore, expectedFoodEaten, gameD
     };
   }
   
-  // Duration validation with tolerance
   const durationDiff = Math.abs(simulatedDuration - gameDuration);
-  // More generous tolerance: 20% or minimum 10 seconds
-  // Accounts for: network lag, browser performance, frame rate variations, pause time
   const maxDurationDiff = Math.max(10, gameDuration * 0.20);
   
   if (durationDiff > maxDurationDiff) {

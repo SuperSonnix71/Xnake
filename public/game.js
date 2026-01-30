@@ -235,7 +235,6 @@
         
         frameCount++;
         
-        // Record move if direction changed this frame
         if (direction.x !== nextDirection.x || direction.y !== nextDirection.y) {
             const dirCode = nextDirection.y === -1 ? 0 : 
                            nextDirection.x === 1 ? 1 : 
@@ -408,12 +407,10 @@
         
         const gameDuration = Math.floor((Date.now() - gameStartTime) / 1000);
         
-        // Only submit score if player actually scored points (don't track instant crashes)
         if (score > 0) {
             try {
                 const speedLevel = Math.floor((CONFIG.initialSpeed - currentSpeed) / CONFIG.speedIncrease) + 1;
                 
-                // Format: direction,frame,timestamp
                 const movesString = moveHistory.map(m => `${m.d},${m.f},${m.t}`).join(';');
                 
                 const response = await fetch('/api/score', {
@@ -523,10 +520,8 @@
                         'timing_invalid': 'Suspicious Timing'
                     };
                     
-                    // Make label more specific based on reason
                     let cheatLabel = cheatTypeLabels[entry.cheat_type] || entry.cheat_type;
                     
-                    // If replay_fail, check reason for more specific label
                     if (entry.cheat_type === 'replay_fail' && entry.reason) {
                         if (entry.reason.includes('duration mismatch')) {
                             cheatLabel = 'Time Manipulation';
@@ -535,6 +530,14 @@
                         } else if (entry.reason.includes('Food count mismatch')) {
                             cheatLabel = 'Food Count Tampering';
                         }
+                    }
+                    
+                    if (entry.cheat_type === 'invalid_session') {
+                        cheatLabel = 'Session/Seed Tampering';
+                    }
+                    
+                    if (entry.cheat_type === 'missing_moves' && entry.attempted_score > 0) {
+                        cheatLabel = 'Move History Tampering';
                     }
                     
                     return `
