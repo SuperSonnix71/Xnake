@@ -320,16 +320,19 @@ const cheaterOps = {
     getHallOfShame: (limit = 50) => {
         const result = db.exec(`
             SELECT 
-                username,
-                ip_address,
-                cheat_type,
-                attempted_score,
-                reason,
-                caught_at,
-                COUNT(*) as offense_count
-            FROM cheaters
-            GROUP BY player_id
-            ORDER BY caught_at DESC
+                c.username,
+                c.ip_address,
+                c.cheat_type,
+                c.attempted_score,
+                c.reason,
+                c.caught_at,
+                (SELECT COUNT(*) FROM cheaters WHERE player_id = c.player_id) as offense_count
+            FROM cheaters c
+            WHERE c.caught_at = (
+                SELECT MAX(caught_at) FROM cheaters WHERE player_id = c.player_id
+            )
+            GROUP BY c.player_id
+            ORDER BY c.caught_at DESC
             LIMIT ?
         `, [limit]);
         
