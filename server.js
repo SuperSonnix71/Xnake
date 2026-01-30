@@ -191,10 +191,7 @@ app.post('/api/score', (req, res) => {
     }
   }
 
-  const maxSpeedLevel = Math.floor((150 - 50) / 3) + 1;
-  if (speedLevel > maxSpeedLevel) {
-    return res.status(400).json({ error: 'Invalid speed level' });
-  }
+
 
   if (gameDuration && speedLevel > 5) {
     const minDuration = speedLevel * 1.5;
