@@ -513,3 +513,159 @@ body {
 .developer-credit:hover {
     color: rgba(255, 255, 255, 0.6);
 }
+
+/* Hall of Shame */
+.btn-shame {
+    background: linear-gradient(135deg, #ff006e 0%, #d90429 100%);
+    box-shadow: 0 4px 15px 0 rgba(255, 0, 110, 0.5);
+    margin-top: 10px;
+}
+
+.btn-shame:hover {
+    box-shadow: 0 8px 25px 0 rgba(255, 0, 110, 0.7);
+}
+
+.hall-of-shame-content {
+    max-width: 700px;
+    max-height: 80vh;
+    overflow-y: auto;
+}
+
+.shame-title {
+    color: #ff006e;
+    text-shadow: 0 0 20px rgba(255, 0, 110, 0.8);
+}
+
+.shame-subtitle {
+    color: rgba(255, 255, 255, 0.7);
+    font-size: 0.95em;
+    margin-top: -10px;
+    margin-bottom: 20px;
+}
+
+.hall-of-shame-list {
+    margin: 20px 0;
+    text-align: left;
+}
+
+.hall-of-shame-item {
+    padding: 15px;
+    margin-bottom: 15px;
+    background: rgba(255, 0, 110, 0.05);
+    border-radius: 10px;
+    border: 1px solid rgba(255, 0, 110, 0.2);
+    transition: all 0.3s ease;
+}
+
+.hall-of-shame-item:hover {
+    background: rgba(255, 0, 110, 0.1);
+    transform: translateX(3px);
+}
+
+.hall-of-shame-item.repeat-offender {
+    background: rgba(255, 0, 110, 0.15);
+    border: 2px solid rgba(255, 0, 110, 0.5);
+    box-shadow: 0 0 15px rgba(255, 0, 110, 0.3);
+}
+
+.shame-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid rgba(255, 0, 110, 0.2);
+}
+
+.shame-username {
+    color: #ff006e;
+    font-size: 1.2em;
+    font-weight: 700;
+    text-shadow: 0 0 10px rgba(255, 0, 110, 0.5);
+}
+
+.offense-badge {
+    display: inline-block;
+    background: rgba(255, 0, 110, 0.3);
+    padding: 3px 8px;
+    border-radius: 5px;
+    font-size: 0.7em;
+    font-weight: 600;
+    color: #fff;
+    margin-left: 8px;
+    border: 1px solid rgba(255, 0, 110, 0.5);
+}
+
+.shame-date {
+    color: rgba(255, 255, 255, 0.5);
+    font-size: 0.85em;
+}
+
+.shame-details {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 10px;
+}
+
+.shame-info {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.shame-label {
+    color: rgba(255, 255, 255, 0.6);
+    font-size: 0.9em;
+    font-weight: 500;
+}
+
+.shame-value {
+    color: #fff;
+    font-size: 0.95em;
+    font-weight: 600;
+}
+
+.shame-value.cheat-type {
+    color: #ff006e;
+    text-shadow: 0 0 8px rgba(255, 0, 110, 0.5);
+}
+
+.shame-value.ip-address {
+    font-family: 'Courier New', monospace;
+    color: rgba(255, 255, 255, 0.8);
+}
+
+.shame-reason {
+    margin-top: 10px;
+    padding: 10px;
+    background: rgba(0, 0, 0, 0.3);
+    border-radius: 5px;
+    color: rgba(255, 255, 255, 0.7);
+    font-size: 0.85em;
+    font-style: italic;
+    border-left: 3px solid rgba(255, 0, 110, 0.5);
+}
+
+/* Responsive updates for Hall of Shame */
+@media (max-width: 768px) {
+    .hall-of-shame-item {
+        padding: 12px;
+    }
+    
+    .shame-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 5px;
+    }
+    
+    .shame-username {
+        font-size: 1em;
+    }
+    
+    .shame-info {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 3px;
+    }
+}

@@ -51,10 +51,25 @@ async function initializeDatabase() {
         )
     `);
 
-    // Create indexes for better performance
+    db.run(`
+        CREATE TABLE IF NOT EXISTS cheaters (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            player_id TEXT NOT NULL,
+            username TEXT NOT NULL,
+            ip_address TEXT,
+            fingerprint TEXT NOT NULL,
+            cheat_type TEXT NOT NULL,
+            attempted_score INTEGER,
+            reason TEXT NOT NULL,
+            caught_at INTEGER NOT NULL,
+            FOREIGN KEY (player_id) REFERENCES players(id)
+        )
+    `);
+
     db.run(`CREATE INDEX IF NOT EXISTS idx_scores_player ON scores(player_id)`);
     db.run(`CREATE INDEX IF NOT EXISTS idx_scores_score ON scores(score DESC)`);
     db.run(`CREATE INDEX IF NOT EXISTS idx_players_fingerprint ON players(fingerprint)`);
+    db.run(`CREATE INDEX IF NOT EXISTS idx_cheaters_caught_at ON cheaters(caught_at DESC)`);
 
     // Save database
     saveDatabase();
@@ -291,10 +306,62 @@ function closeDatabase() {
     saveDatabase();
 }
 
+const cheaterOps = {
+    record: (playerId, username, ipAddress, fingerprint, cheatType, attemptedScore, reason) => {
+        const now = Date.now();
+        
+        db.run(
+            'INSERT INTO cheaters (player_id, username, ip_address, fingerprint, cheat_type, attempted_score, reason, caught_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+            [playerId, username, ipAddress, fingerprint, cheatType, attemptedScore, reason, now]
+        );
+        saveDatabase();
+    },
+
+    getHallOfShame: (limit = 50) => {
+        const result = db.exec(`
+            SELECT 
+                username,
+                ip_address,
+                cheat_type,
+                attempted_score,
+                reason,
+                caught_at,
+                COUNT(*) as offense_count
+            FROM cheaters
+            GROUP BY player_id
+            ORDER BY caught_at DESC
+            LIMIT ?
+        `, [limit]);
+        
+        if (result.length === 0) return [];
+        
+        return result[0].values.map(row => ({
+            username: row[0],
+            ip_address: row[1],
+            cheat_type: row[2],
+            attempted_score: row[3],
+            reason: row[4],
+            caught_at: row[5],
+            offense_count: row[6]
+        }));
+    },
+
+    getCheatCount: (playerId) => {
+        const result = db.exec('SELECT COUNT(*) FROM cheaters WHERE player_id = ?', [playerId]);
+        if (result.length === 0 || result[0].values.length === 0) return 0;
+        return result[0].values[0][0];
+    },
+
+    isKnownCheater: (playerId) => {
+        return cheaterOps.getCheatCount(playerId) > 0;
+    }
+};
+
 module.exports = {
     initializeDatabase,
     playerOps,
     scoreOps,
     statsOps,
+    cheaterOps,
     closeDatabase
 };

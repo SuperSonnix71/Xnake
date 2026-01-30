@@ -62,6 +62,8 @@
         document.getElementById('hallOfFameBtn').addEventListener('click', showHallOfFame);
         document.getElementById('viewHallOfFameBtn').addEventListener('click', showHallOfFame);
         document.getElementById('closeHallOfFameBtn').addEventListener('click', closeHallOfFame);
+        document.getElementById('hallOfShameBtn').addEventListener('click', showHallOfShame);
+        document.getElementById('closeHallOfShameBtn').addEventListener('click', closeHallOfShame);
         document.addEventListener('keydown', handleKeyPress);
         
         resetGame();
@@ -480,6 +482,90 @@
     
     function closeHallOfFame() {
         document.getElementById('hallOfFameScreen').classList.add('hidden');
+    }
+    
+    async function showHallOfShame() {
+        const hallOfShameList = document.getElementById('hallOfShameList');
+        hallOfShameList.innerHTML = '<p class="loading">Loading...</p>';
+        
+        document.getElementById('hallOfShameScreen').classList.remove('hidden');
+        
+        try {
+            const response = await fetch('/api/hallofshame?limit=50');
+            const data = await response.json();
+            
+            if (data.hallOfShame && data.hallOfShame.length > 0) {
+                hallOfShameList.innerHTML = data.hallOfShame.map((entry) => {
+                    const date = new Date(entry.caught_at).toLocaleDateString();
+                    const time = new Date(entry.caught_at).toLocaleTimeString();
+                    const maskedIP = entry.ip_address ? maskIP(entry.ip_address) : 'Unknown';
+                    const repeatOffender = entry.offense_count > 3;
+                    
+                    const cheatTypeLabels = {
+                        'score_mismatch': 'Score Manipulation',
+                        'speed_hack': 'Speed Hacking',
+                        'replay_fail': 'Invalid Game Replay',
+                        'invalid_session': 'Session Tampering',
+                        'missing_moves': 'Missing Move Data',
+                        'timing_invalid': 'Suspicious Timing'
+                    };
+                    
+                    const cheatLabel = cheatTypeLabels[entry.cheat_type] || entry.cheat_type;
+                    
+                    return `
+                        <div class="hall-of-shame-item ${repeatOffender ? 'repeat-offender' : ''}">
+                            <div class="shame-header">
+                                <div class="shame-username">
+                                    ${repeatOffender ? '🚨 ' : ''}${entry.username}
+                                    ${repeatOffender ? ` <span class="offense-badge">${entry.offense_count}x offender</span>` : ''}
+                                </div>
+                                <div class="shame-date">${date} ${time}</div>
+                            </div>
+                            <div class="shame-details">
+                                <div class="shame-info">
+                                    <span class="shame-label">Cheat Type:</span>
+                                    <span class="shame-value cheat-type">${cheatLabel}</span>
+                                </div>
+                                <div class="shame-info">
+                                    <span class="shame-label">Attempted Score:</span>
+                                    <span class="shame-value">${entry.attempted_score || 'N/A'}</span>
+                                </div>
+                                <div class="shame-info">
+                                    <span class="shame-label">IP Address:</span>
+                                    <span class="shame-value ip-address">${maskedIP}</span>
+                                </div>
+                            </div>
+                            <div class="shame-reason">${entry.reason}</div>
+                        </div>
+                    `;
+                }).join('');
+            } else {
+                hallOfShameList.innerHTML = '<p class="loading">No cheaters caught yet! 🎉</p>';
+            }
+        } catch (error) {
+            hallOfShameList.innerHTML = '<p class="loading">Failed to load Hall of Shame</p>';
+            console.error('Failed to load hall of shame:', error);
+        }
+    }
+    
+    function closeHallOfShame() {
+        document.getElementById('hallOfShameScreen').classList.add('hidden');
+    }
+    
+    function maskIP(ip) {
+        if (!ip || ip === 'unknown') return 'Unknown';
+        
+        const parts = ip.split('.');
+        if (parts.length === 4) {
+            return `${parts[0]}.${parts[1]}.xxx.xxx`;
+        }
+        
+        if (ip.includes(':')) {
+            const parts = ip.split(':');
+            return parts.slice(0, 3).join(':') + ':xxxx:xxxx:xxxx';
+        }
+        
+        return 'Unknown';
     }
     
     if (!CanvasRenderingContext2D.prototype.roundRect) {

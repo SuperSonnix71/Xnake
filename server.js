@@ -1,13 +1,20 @@
 const express = require('express');
 const session = require('express-session');
 const path = require('path');
-const { initializeDatabase, playerOps, scoreOps, statsOps, closeDatabase } = require('./database');
+const { initializeDatabase, playerOps, scoreOps, statsOps, cheaterOps, closeDatabase } = require('./database');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 const rateLimit = new Map();
 const activeSessions = new Map();
+
+function getClientIP(req) {
+  return req.headers['x-forwarded-for']?.split(',')[0].trim() || 
+         req.headers['x-real-ip'] || 
+         req.socket.remoteAddress || 
+         'unknown';
+}
 
 function checkRateLimit(playerId, maxRequests = 10, windowMs = 60000) {
   const now = Date.now();
@@ -343,7 +350,9 @@ app.post('/api/score', (req, res) => {
   if (foodEaten) {
     if (foodEaten * 10 !== score) {
       const player = playerOps.findById(req.session.playerId);
+      const ipAddress = getClientIP(req);
       console.log(`[CHEAT DETECTED] Player: ${player.username} (${req.session.playerId}) - Food: ${foodEaten}, Score: ${score} (expected ${foodEaten * 10})`);
+      cheaterOps.record(req.session.playerId, player.username, ipAddress, fingerprint, 'score_mismatch', score, `Score ${score} does not match food eaten ${foodEaten}`);
       return res.status(400).json({ error: 'Score does not match food eaten' });
     }
   }
@@ -351,7 +360,10 @@ app.post('/api/score', (req, res) => {
   if (gameDuration && speedLevel > 5) {
     const minDuration = speedLevel * 1.5;
     if (gameDuration < minDuration) {
-      console.log(`[CHEAT DETECTED] Player: ${req.session.playerId} - Duration: ${gameDuration}s, Speed: ${speedLevel} (too fast, min: ${minDuration}s)`);
+      const player = playerOps.findById(req.session.playerId);
+      const ipAddress = getClientIP(req);
+      console.log(`[CHEAT DETECTED] Player: ${player.username} - Duration: ${gameDuration}s, Speed: ${speedLevel} (too fast, min: ${minDuration}s)`);
+      cheaterOps.record(req.session.playerId, player.username, ipAddress, fingerprint, 'speed_hack', score, `Game too fast: ${gameDuration}s (min ${minDuration}s)`);
       return res.status(400).json({ error: 'Game completed too quickly' });
     }
   }
@@ -363,13 +375,17 @@ app.post('/api/score', (req, res) => {
   const session = activeSessions.get(req.session.playerId);
   if (!session || session.seed !== seed) {
     const player = playerOps.findById(req.session.playerId);
+    const ipAddress = getClientIP(req);
     console.log(`[CHEAT DETECTED] Player: ${player.username} - Invalid or missing game session`);
+    cheaterOps.record(req.session.playerId, player.username, ipAddress, fingerprint, 'invalid_session', score, 'Invalid or missing game session');
     return res.status(400).json({ error: 'Invalid game session' });
   }
 
   if (!moves || typeof moves !== 'string') {
     const player = playerOps.findById(req.session.playerId);
+    const ipAddress = getClientIP(req);
     console.log(`[CHEAT DETECTED] Player: ${player.username} - Missing move history`);
+    cheaterOps.record(req.session.playerId, player.username, ipAddress, fingerprint, 'missing_moves', score, 'Missing move history');
     return res.status(400).json({ error: 'Move history required' });
   }
 
@@ -382,7 +398,9 @@ app.post('/api/score', (req, res) => {
   
   if (!validation.valid) {
     const player = playerOps.findById(req.session.playerId);
+    const ipAddress = getClientIP(req);
     console.log(`[CHEAT DETECTED] Player: ${player.username} - Replay validation failed: ${validation.reason}`);
+    cheaterOps.record(req.session.playerId, player.username, ipAddress, fingerprint, 'replay_fail', score, validation.reason);
     return res.status(400).json({ error: 'Game validation failed: ' + validation.reason });
   }
 
@@ -406,6 +424,12 @@ app.get('/api/halloffame', (req, res) => {
   const limit = parseInt(req.query.limit) || 10;
   const hallOfFame = scoreOps.getHallOfFame(limit);
   res.json({ hallOfFame });
+});
+
+app.get('/api/hallofshame', (req, res) => {
+  const limit = parseInt(req.query.limit) || 50;
+  const hallOfShame = cheaterOps.getHallOfShame(limit);
+  res.json({ hallOfShame });
 });
 
 app.get('/api/player/stats', (req, res) => {
