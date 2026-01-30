@@ -6,28 +6,38 @@ const { initializeDatabase, playerOps, scoreOps, statsOps, closeDatabase } = req
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Middleware
+const rateLimit = new Map();
+
+function checkRateLimit(playerId, maxRequests = 10, windowMs = 60000) {
+  const now = Date.now();
+  const playerRequests = rateLimit.get(playerId) || [];
+  const recentRequests = playerRequests.filter(time => now - time < windowMs);
+  
+  if (recentRequests.length >= maxRequests) {
+    return false;
+  }
+  
+  recentRequests.push(now);
+  rateLimit.set(playerId, recentRequests);
+  return true;
+}
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Session configuration
 app.use(session({
   secret: process.env.SESSION_SECRET || 'xnake-secret-key-change-in-production',
   resave: false,
   saveUninitialized: false,
   cookie: {
-    maxAge: 1000 * 60 * 60 * 24 * 365, // 1 year
+    maxAge: 1000 * 60 * 60 * 24 * 365,
     httpOnly: true,
-    secure: false // Set to true in production with HTTPS
+    secure: false
   }
 }));
 
-// Serve static files from the 'public' directory
 app.use(express.static(path.join(__dirname, 'public')));
 
-// API Routes
-
-// Register a new player
 app.post('/api/register', (req, res) => {
   const { username, fingerprint } = req.body;
 
@@ -35,14 +45,12 @@ app.post('/api/register', (req, res) => {
     return res.status(400).json({ error: 'Username and fingerprint required' });
   }
 
-  // Validate username (3-20 chars, alphanumeric and underscores)
   if (!/^[a-zA-Z0-9_]{3,20}$/.test(username)) {
     return res.status(400).json({ 
       error: 'Username must be 3-20 characters (letters, numbers, underscores only)' 
     });
   }
 
-  // Check if fingerprint already has a player
   const existingByFingerprint = playerOps.findByFingerprint(fingerprint);
   if (existingByFingerprint) {
     return res.status(400).json({ 
@@ -51,14 +59,12 @@ app.post('/api/register', (req, res) => {
     });
   }
 
-  // Create new player
   const player = playerOps.create(username, fingerprint);
   
   if (!player) {
     return res.status(409).json({ error: 'Username already taken' });
   }
 
-  // Store player in session
   req.session.playerId = player.id;
   req.session.username = player.username;
 
@@ -71,7 +77,6 @@ app.post('/api/register', (req, res) => {
   });
 });
 
-// Check current session
 app.get('/api/session', (req, res) => {
   if (req.session.playerId) {
     const player = playerOps.findById(req.session.playerId);
@@ -97,7 +102,6 @@ app.get('/api/session', (req, res) => {
   res.json({ loggedIn: false });
 });
 
-// Verify player with fingerprint
 app.post('/api/verify', (req, res) => {
   const { fingerprint } = req.body;
 
@@ -105,7 +109,6 @@ app.post('/api/verify', (req, res) => {
     return res.status(400).json({ error: 'Fingerprint required' });
   }
 
-  // Check if session exists
   if (req.session.playerId) {
     const isValid = playerOps.verifyFingerprint(req.session.playerId, fingerprint);
     
@@ -126,16 +129,13 @@ app.post('/api/verify', (req, res) => {
         }
       });
     } else {
-      // Fingerprint doesn't match - possible device change or tampering
       req.session.destroy();
       return res.json({ verified: false, reason: 'fingerprint_mismatch' });
     }
   }
 
-  // No session, check if fingerprint exists
   const player = playerOps.findByFingerprint(fingerprint);
   if (player) {
-    // Auto-login existing player
     req.session.playerId = player.id;
     req.session.username = player.username;
     playerOps.updateLastSeen(player.id);
@@ -160,27 +160,57 @@ app.post('/api/verify', (req, res) => {
   res.json({ verified: false, reason: 'not_registered' });
 });
 
-// Submit score
 app.post('/api/score', (req, res) => {
   if (!req.session.playerId) {
     return res.status(401).json({ error: 'Not authenticated' });
   }
 
-  const { score, speedLevel, fingerprint } = req.body;
+  if (!checkRateLimit(req.session.playerId, 10, 60000)) {
+    return res.status(429).json({ error: 'Too many score submissions. Please wait.' });
+  }
+
+  const { score, speedLevel, fingerprint, gameDuration, foodEaten } = req.body;
 
   if (typeof score !== 'number' || typeof speedLevel !== 'number') {
     return res.status(400).json({ error: 'Invalid score data' });
   }
 
-  // Verify fingerprint
+  if (score < 0) {
+    return res.status(400).json({ error: 'Invalid score: negative value' });
+  }
+
+  if (score > 10000) {
+    return res.status(400).json({ error: 'Invalid score: exceeds maximum' });
+  }
+
+  const maxPossibleScore = speedLevel * 10;
+  if (score > maxPossibleScore) {
+    const player = playerOps.findById(req.session.playerId);
+    console.log(`[CHEAT DETECTED] Player: ${player.username} (${req.session.playerId}) - Score: ${score}, Max Possible: ${maxPossibleScore}, Speed: ${speedLevel}`);
+    return res.status(400).json({ error: 'Invalid score: exceeds maximum possible for speed level' });
+  }
+
+  const minExpectedScore = speedLevel * 10;
+  if (score < minExpectedScore - 100 && speedLevel > 1) {
+    return res.status(400).json({ error: 'Invalid score: inconsistent with speed level' });
+  }
+
+  if (gameDuration && gameDuration < speedLevel * 2) {
+    console.log(`[CHEAT DETECTED] Player: ${req.session.playerId} - Duration: ${gameDuration}s, Speed: ${speedLevel} (too fast)`);
+    return res.status(400).json({ error: 'Invalid game duration' });
+  }
+
+  if (foodEaten && Math.abs(foodEaten * 10 - score) > 10) {
+    console.log(`[CHEAT DETECTED] Player: ${req.session.playerId} - Food: ${foodEaten}, Score: ${score} (mismatch)`);
+    return res.status(400).json({ error: 'Invalid game data' });
+  }
+
   if (!playerOps.verifyFingerprint(req.session.playerId, fingerprint)) {
     return res.status(403).json({ error: 'Fingerprint verification failed' });
   }
 
-  // Add score to database
   scoreOps.add(req.session.playerId, score, speedLevel);
   
-  // Get updated stats
   const bestScore = scoreOps.getBestScore(req.session.playerId);
   const rank = scoreOps.getPlayerRank(req.session.playerId);
   const isNewBest = score === bestScore;
@@ -193,14 +223,12 @@ app.post('/api/score', (req, res) => {
   });
 });
 
-// Get hall of fame
 app.get('/api/halloffame', (req, res) => {
   const limit = parseInt(req.query.limit) || 10;
   const hallOfFame = scoreOps.getHallOfFame(limit);
   res.json({ hallOfFame });
 });
 
-// Get player stats
 app.get('/api/player/stats', (req, res) => {
   if (!req.session.playerId) {
     return res.status(401).json({ error: 'Not authenticated' });
@@ -223,24 +251,20 @@ app.get('/api/player/stats', (req, res) => {
   });
 });
 
-// Get global stats
 app.get('/api/stats', (req, res) => {
   const stats = statsOps.getGlobalStats();
   res.json({ stats });
 });
 
-// Logout
 app.post('/api/logout', (req, res) => {
   req.session.destroy();
   res.json({ success: true });
 });
 
-// Route for the main page
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-// Start the server after initializing database
 async function startServer() {
   try {
     await initializeDatabase();
@@ -252,7 +276,6 @@ async function startServer() {
       console.log(`🏆 Hall of Fame enabled with persistent scores!`);
     });
 
-    // Graceful shutdown
     process.on('SIGTERM', () => {
       console.log('SIGTERM signal received: closing HTTP server');
       server.close(() => {
