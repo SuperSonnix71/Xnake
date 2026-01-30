@@ -523,7 +523,19 @@
                         'timing_invalid': 'Suspicious Timing'
                     };
                     
-                    const cheatLabel = cheatTypeLabels[entry.cheat_type] || entry.cheat_type;
+                    // Make label more specific based on reason
+                    let cheatLabel = cheatTypeLabels[entry.cheat_type] || entry.cheat_type;
+                    
+                    // If replay_fail, check reason for more specific label
+                    if (entry.cheat_type === 'replay_fail' && entry.reason) {
+                        if (entry.reason.includes('duration mismatch')) {
+                            cheatLabel = 'Time Manipulation';
+                        } else if (entry.reason.includes('Score mismatch')) {
+                            cheatLabel = 'Score Manipulation';
+                        } else if (entry.reason.includes('Food count mismatch')) {
+                            cheatLabel = 'Food Count Tampering';
+                        }
+                    }
                     
                     return `
                         <div class="hall-of-shame-item ${repeatOffender ? 'repeat-offender' : ''}">
