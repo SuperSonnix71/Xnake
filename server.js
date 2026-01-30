@@ -35,6 +35,36 @@ function seededRandom(seed) {
   return x - Math.floor(x);
 }
 
+function detectPauseAbuse(moves, gameDuration) {
+  if (!moves || moves.length < 2) {
+    return { hasPause: false, suspiciousGaps: [] };
+  }
+  
+  const suspiciousGaps = [];
+  const SUSPICIOUS_GAP_MS = 3000; // 3 seconds between moves is suspicious
+  
+  for (let i = 1; i < moves.length; i++) {
+    const timeDiff = moves[i].t - moves[i-1].t;
+    if (timeDiff > SUSPICIOUS_GAP_MS) {
+      suspiciousGaps.push({
+        moveIndex: i,
+        gapMs: timeDiff,
+        gapSeconds: Math.floor(timeDiff / 1000)
+      });
+    }
+  }
+  
+  const totalSuspiciousTime = suspiciousGaps.reduce((sum, gap) => sum + gap.gapMs, 0);
+  const hasPause = suspiciousGaps.length > 0;
+  
+  return {
+    hasPause,
+    suspiciousGaps,
+    totalSuspiciousTime: Math.floor(totalSuspiciousTime / 1000),
+    gapCount: suspiciousGaps.length
+  };
+}
+
 function validateGameReplay(moves, seed, expectedScore, expectedFoodEaten, gameDuration, totalFrames) {
   const GRID_SIZE = 30;
   const INITIAL_SPEED = 150;
@@ -501,6 +531,36 @@ app.post('/api/score', (req, res) => {
     }
     return null;
   }).filter(m => m && !isNaN(m.d) && !isNaN(m.f) && !isNaN(m.t));
+
+  // Detect pause abuse
+  const pauseCheck = detectPauseAbuse(parsedMoves, gameDuration);
+  if (pauseCheck.hasPause) {
+    const player = playerOps.findById(req.session.playerId);
+    const ipAddress = getClientIP(req);
+    
+    console.log(`\n========== CHEAT DETECTED: PAUSE ABUSE ==========`);
+    console.log(`Player: ${player.username} (ID: ${player.id})`);
+    console.log(`IP Address: ${ipAddress}`);
+    console.log(`Suspicious gaps detected: ${pauseCheck.gapCount}`);
+    console.log(`Total suspicious pause time: ${pauseCheck.totalSuspiciousTime}s`);
+    console.log(`Game duration: ${gameDuration}s`);
+    console.log(`Gaps:`, pauseCheck.suspiciousGaps);
+    console.log(`=====================================\n`);
+    
+    cheaterOps.record(
+      req.session.playerId, 
+      player.username, 
+      ipAddress, 
+      fingerprint, 
+      'pause_abuse', 
+      score, 
+      `Paused game detected: ${pauseCheck.gapCount} gaps totaling ${pauseCheck.totalSuspiciousTime}s`
+    );
+    
+    return res.status(400).json({ 
+      error: 'Game pausing detected. Play without pausing to submit scores.' 
+    });
+  }
 
   const validation = validateGameReplay(parsedMoves, seed, score, foodEaten, gameDuration, totalFrames);
   

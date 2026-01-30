@@ -44,6 +44,8 @@
     let foodEatenCount = 0;
     let moveHistory = [];
     let gameSeed = 0;
+    let pauseStartTime = 0;
+    let totalPauseTime = 0;
     
     async function init() {
         canvas = document.getElementById('gameCanvas');
@@ -159,6 +161,8 @@
         frameCount = 0;
         currentSpeed = CONFIG.initialSpeed;
         isPaused = false;
+        pauseStartTime = 0;
+        totalPauseTime = 0;
         updateScore();
         updateSpeedDisplay();
         spawnFood();
@@ -204,6 +208,11 @@
         
         if (e.code === 'Space') {
             e.preventDefault();
+            if (!isPaused) {
+                pauseStartTime = Date.now();
+            } else {
+                totalPauseTime += Date.now() - pauseStartTime;
+            }
             isPaused = !isPaused;
             return;
         }
@@ -408,6 +417,14 @@
         const gameDuration = Math.floor((Date.now() - gameStartTime) / 1000);
         
         if (score > 0) {
+            if (totalPauseTime > 0) {
+                alert(`Game paused detected! Your score cannot be submitted.\n\nTotal pause time: ${Math.floor(totalPauseTime / 1000)} seconds\n\nPlease play without pausing to submit your score.`);
+                document.getElementById('gameOverScreen').classList.remove('hidden');
+                document.getElementById('gameOverScore').textContent = score;
+                document.getElementById('newBestMessage').classList.add('hidden');
+                return;
+            }
+            
             try {
                 const speedLevel = Math.floor((CONFIG.initialSpeed - currentSpeed) / CONFIG.speedIncrease) + 1;
                 
@@ -517,7 +534,8 @@
                         'replay_fail': 'Invalid Game Replay',
                         'invalid_session': 'Session Tampering',
                         'missing_moves': 'Missing Move Data',
-                        'timing_invalid': 'Suspicious Timing'
+                        'timing_invalid': 'Suspicious Timing',
+                        'pause_abuse': 'Game Pausing'
                     };
                     
                     let cheatLabel = cheatTypeLabels[entry.cheat_type] || entry.cheat_type;
