@@ -21,6 +21,11 @@
         }
     };
     
+    function seededRandom(seed) {
+        const x = Math.sin(seed++) * 10000;
+        return x - Math.floor(x);
+    }
+    
     let canvas, ctx;
     let snake = [];
     let food = {};
@@ -36,6 +41,8 @@
     let fingerprint = null;
     let gameStartTime = 0;
     let foodEatenCount = 0;
+    let moveHistory = [];
+    let gameSeed = 0;
     
     async function init() {
         canvas = document.getElementById('gameCanvas');
@@ -145,6 +152,7 @@
         nextDirection = { x: 1, y: 0 };
         score = 0;
         foodEatenCount = 0;
+        moveHistory = [];
         currentSpeed = CONFIG.initialSpeed;
         isPaused = false;
         updateScore();
@@ -152,8 +160,28 @@
         spawnFood();
     }
     
-    function startGame() {
+    async function startGame() {
         if (!playerData) return;
+        
+        try {
+            const response = await fetch('/api/game/start', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ fingerprint })
+            });
+            
+            const data = await response.json();
+            if (!data.success) {
+                alert('Failed to start game');
+                return;
+            }
+            
+            gameSeed = data.seed;
+        } catch (error) {
+            console.error('Failed to initialize game:', error);
+            alert('Failed to start game');
+            return;
+        }
         
         document.getElementById('startScreen').classList.add('hidden');
         isGameRunning = true;
@@ -194,6 +222,14 @@
             e.preventDefault();
             if (newDirection.x !== -direction.x || newDirection.y !== -direction.y) {
                 nextDirection = newDirection;
+                
+                const dirCode = newDirection.y === -1 ? 0 : 
+                               newDirection.x === 1 ? 1 : 
+                               newDirection.y === 1 ? 2 : 3;
+                moveHistory.push({
+                    d: dirCode,
+                    t: Date.now() - gameStartTime
+                });
             }
         }
     }
@@ -250,12 +286,17 @@
     
     function spawnFood() {
         let newFood;
+        let attempts = 0;
+        const maxAttempts = CONFIG.gridSize * CONFIG.gridSize;
+        
         do {
+            const randValue = seededRandom(gameSeed + foodEatenCount + attempts);
             newFood = {
-                x: Math.floor(Math.random() * CONFIG.gridSize),
-                y: Math.floor(Math.random() * CONFIG.gridSize)
+                x: Math.floor(randValue * CONFIG.gridSize),
+                y: Math.floor(seededRandom(gameSeed + foodEatenCount + attempts + 1) * CONFIG.gridSize)
             };
-        } while (snake.some(segment => segment.x === newFood.x && segment.y === newFood.y));
+            attempts++;
+        } while (snake.some(segment => segment.x === newFood.x && segment.y === newFood.y) && attempts < maxAttempts);
         
         food = newFood;
     }
@@ -359,6 +400,9 @@
         
         try {
             const speedLevel = Math.floor((CONFIG.initialSpeed - currentSpeed) / CONFIG.speedIncrease) + 1;
+            
+            const movesString = moveHistory.map(m => `${m.d},${m.t}`).join(';');
+            
             const response = await fetch('/api/score', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -367,7 +411,9 @@
                     speedLevel,
                     fingerprint,
                     gameDuration,
-                    foodEaten: foodEatenCount
+                    foodEaten: foodEatenCount,
+                    seed: gameSeed,
+                    moves: movesString
                 })
             });
             

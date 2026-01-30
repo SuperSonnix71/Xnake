@@ -7,6 +7,7 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 const rateLimit = new Map();
+const activeSessions = new Map();
 
 function checkRateLimit(playerId, maxRequests = 10, windowMs = 60000) {
   const now = Date.now();
@@ -20,6 +21,115 @@ function checkRateLimit(playerId, maxRequests = 10, windowMs = 60000) {
   recentRequests.push(now);
   rateLimit.set(playerId, recentRequests);
   return true;
+}
+
+function seededRandom(seed) {
+  const x = Math.sin(seed++) * 10000;
+  return x - Math.floor(x);
+}
+
+function validateGameReplay(moves, seed, expectedScore, expectedFoodEaten) {
+  const GRID_SIZE = 30;
+  const INITIAL_SPEED = 150;
+  const SPEED_INCREASE = 3;
+  
+  const center = Math.floor(GRID_SIZE / 2);
+  let snake = [
+    { x: center, y: center },
+    { x: center - 1, y: center },
+    { x: center - 2, y: center }
+  ];
+  
+  let direction = { x: 1, y: 0 };
+  let score = 0;
+  let foodEaten = 0;
+  let currentSpeed = INITIAL_SPEED;
+  
+  function spawnFood() {
+    let newFood;
+    let attempts = 0;
+    const maxAttempts = GRID_SIZE * GRID_SIZE;
+    
+    do {
+      const randValue = seededRandom(seed + foodEaten + attempts);
+      newFood = {
+        x: Math.floor(randValue * GRID_SIZE),
+        y: Math.floor(seededRandom(seed + foodEaten + attempts + 1) * GRID_SIZE)
+      };
+      attempts++;
+    } while (snake.some(seg => seg.x === newFood.x && seg.y === newFood.y) && attempts < maxAttempts);
+    
+    return newFood;
+  }
+  
+  let food = spawnFood();
+  let moveIndex = 0;
+  let lastMoveTime = 0;
+  let gameTime = 0;
+  
+  const directions = [
+    { x: 0, y: -1 },
+    { x: 1, y: 0 },
+    { x: 0, y: 1 },
+    { x: -1, y: 0 }
+  ];
+  
+  while (gameTime < 600000) {
+    if (moveIndex < moves.length && moves[moveIndex].t <= gameTime) {
+      const newDir = directions[moves[moveIndex].d];
+      if (newDir.x !== -direction.x || newDir.y !== -direction.y) {
+        direction = newDir;
+      }
+      moveIndex++;
+    }
+    
+    const updateInterval = currentSpeed;
+    gameTime += updateInterval;
+    
+    const head = { x: snake[0].x + direction.x, y: snake[0].y + direction.y };
+    
+    if (head.x < 0 || head.x >= GRID_SIZE || head.y < 0 || head.y >= GRID_SIZE) {
+      break;
+    }
+    
+    if (snake.some(seg => seg.x === head.x && seg.y === head.y)) {
+      break;
+    }
+    
+    snake.unshift(head);
+    
+    if (head.x === food.x && head.y === food.y) {
+      score += 10;
+      foodEaten++;
+      food = spawnFood();
+      
+      if (currentSpeed > 50) {
+        currentSpeed -= SPEED_INCREASE;
+      }
+    } else {
+      snake.pop();
+    }
+    
+    if (foodEaten > 1000) {
+      return { valid: false, reason: 'Too many food eaten' };
+    }
+  }
+  
+  if (Math.abs(score - expectedScore) > 0) {
+    return { 
+      valid: false, 
+      reason: `Score mismatch: expected ${expectedScore}, got ${score}` 
+    };
+  }
+  
+  if (Math.abs(foodEaten - expectedFoodEaten) > 0) {
+    return { 
+      valid: false, 
+      reason: `Food count mismatch: expected ${expectedFoodEaten}, got ${foodEaten}` 
+    };
+  }
+  
+  return { valid: true, replayedScore: score, replayedFoodEaten: foodEaten };
 }
 
 app.use(express.json());
@@ -102,6 +212,27 @@ app.get('/api/session', (req, res) => {
   res.json({ loggedIn: false });
 });
 
+app.post('/api/game/start', (req, res) => {
+  if (!req.session.playerId) {
+    return res.status(401).json({ error: 'Not authenticated' });
+  }
+
+  const { fingerprint } = req.body;
+  
+  if (!playerOps.verifyFingerprint(req.session.playerId, fingerprint)) {
+    return res.status(403).json({ error: 'Fingerprint verification failed' });
+  }
+
+  const seed = Math.floor(Math.random() * 1000000);
+  
+  activeSessions.set(req.session.playerId, {
+    seed,
+    startTime: Date.now()
+  });
+
+  res.json({ success: true, seed });
+});
+
 app.post('/api/verify', (req, res) => {
   const { fingerprint } = req.body;
 
@@ -169,7 +300,7 @@ app.post('/api/score', (req, res) => {
     return res.status(429).json({ error: 'Too many score submissions. Please wait.' });
   }
 
-  const { score, speedLevel, fingerprint, gameDuration, foodEaten } = req.body;
+  const { score, speedLevel, fingerprint, gameDuration, foodEaten, seed, moves } = req.body;
 
   if (typeof score !== 'number' || typeof speedLevel !== 'number') {
     return res.status(400).json({ error: 'Invalid score data' });
@@ -191,8 +322,6 @@ app.post('/api/score', (req, res) => {
     }
   }
 
-
-
   if (gameDuration && speedLevel > 5) {
     const minDuration = speedLevel * 1.5;
     if (gameDuration < minDuration) {
@@ -204,6 +333,34 @@ app.post('/api/score', (req, res) => {
   if (!playerOps.verifyFingerprint(req.session.playerId, fingerprint)) {
     return res.status(403).json({ error: 'Fingerprint verification failed' });
   }
+
+  const session = activeSessions.get(req.session.playerId);
+  if (!session || session.seed !== seed) {
+    const player = playerOps.findById(req.session.playerId);
+    console.log(`[CHEAT DETECTED] Player: ${player.username} - Invalid or missing game session`);
+    return res.status(400).json({ error: 'Invalid game session' });
+  }
+
+  if (!moves || typeof moves !== 'string') {
+    const player = playerOps.findById(req.session.playerId);
+    console.log(`[CHEAT DETECTED] Player: ${player.username} - Missing move history`);
+    return res.status(400).json({ error: 'Move history required' });
+  }
+
+  const parsedMoves = moves.split(';').map(pair => {
+    const [d, t] = pair.split(',').map(Number);
+    return { d, t };
+  }).filter(m => !isNaN(m.d) && !isNaN(m.t));
+
+  const validation = validateGameReplay(parsedMoves, seed, score, foodEaten);
+  
+  if (!validation.valid) {
+    const player = playerOps.findById(req.session.playerId);
+    console.log(`[CHEAT DETECTED] Player: ${player.username} - Replay validation failed: ${validation.reason}`);
+    return res.status(400).json({ error: 'Game validation failed: ' + validation.reason });
+  }
+
+  activeSessions.delete(req.session.playerId);
 
   scoreOps.add(req.session.playerId, score, speedLevel);
   
