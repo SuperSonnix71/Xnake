@@ -13,7 +13,8 @@ echo ""
 # Configuration
 CONTAINER_NAME="Xnake"
 IMAGE_NAME="xnake-game"
-PORT="3000"
+PORT="3333"
+INTERNAL_PORT="3000"
 
 # Check if Docker is running
 if ! docker info > /dev/null 2>&1; then
@@ -71,7 +72,7 @@ fi
 echo "🚀 Starting container: ${CONTAINER_NAME}"
 docker run -d \
     --name ${CONTAINER_NAME} \
-    -p ${PORT}:${PORT} \
+    -p ${PORT}:${INTERNAL_PORT} \
     --restart unless-stopped \
     -v "$(pwd)":/app \
     ${IMAGE_NAME}
