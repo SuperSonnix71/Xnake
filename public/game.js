@@ -408,46 +408,49 @@
         
         const gameDuration = Math.floor((Date.now() - gameStartTime) / 1000);
         
-        try {
-            const speedLevel = Math.floor((CONFIG.initialSpeed - currentSpeed) / CONFIG.speedIncrease) + 1;
-            
-            // Format: direction,frame,timestamp
-            const movesString = moveHistory.map(m => `${m.d},${m.f},${m.t}`).join(';');
-            
-            const response = await fetch('/api/score', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ 
-                    score, 
-                    speedLevel,
-                    fingerprint,
-                    gameDuration,
-                    foodEaten: foodEatenCount,
-                    seed: gameSeed,
-                    moves: movesString,
-                    totalFrames: frameCount
-                })
-            });
-            
-            const data = await response.json();
-            
-            if (data.success) {
-                playerData.bestScore = data.bestScore;
-                playerData.rank = data.rank;
-                updatePlayerUI();
+        // Only submit score if player actually scored points (don't track instant crashes)
+        if (score > 0) {
+            try {
+                const speedLevel = Math.floor((CONFIG.initialSpeed - currentSpeed) / CONFIG.speedIncrease) + 1;
                 
-                if (data.isNewBest) {
-                    document.getElementById('newBestMessage').classList.remove('hidden');
-                } else {
-                    document.getElementById('newBestMessage').classList.add('hidden');
+                // Format: direction,frame,timestamp
+                const movesString = moveHistory.map(m => `${m.d},${m.f},${m.t}`).join(';');
+                
+                const response = await fetch('/api/score', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        score, 
+                        speedLevel,
+                        fingerprint,
+                        gameDuration,
+                        foodEaten: foodEatenCount,
+                        seed: gameSeed,
+                        moves: movesString,
+                        totalFrames: frameCount
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    playerData.bestScore = data.bestScore;
+                    playerData.rank = data.rank;
+                    updatePlayerUI();
+                    
+                    if (data.isNewBest) {
+                        document.getElementById('newBestMessage').classList.remove('hidden');
+                    } else {
+                        document.getElementById('newBestMessage').classList.add('hidden');
+                    }
+                    
+                    document.getElementById('gameOverRank').textContent = `#${data.rank}`;
+                } else if (data.error) {
+                    alert('Error: ' + data.error);
                 }
-                
-                document.getElementById('gameOverRank').textContent = `#${data.rank}`;
-            } else if (data.error) {
-                alert('Error: ' + data.error);
+            } catch (error) {
+                console.error('Failed to submit score:', error);
             }
-        } catch (error) {
-            console.error('Failed to submit score:', error);
         }
         
         document.getElementById('finalScore').textContent = score;

@@ -476,12 +476,17 @@ app.post('/api/score', (req, res) => {
     return res.status(400).json({ error: 'Invalid game session' });
   }
 
+  // Allow empty moves only for 0-score games (instant crashes are legitimate)
   if (!moves || typeof moves !== 'string') {
-    const player = playerOps.findById(req.session.playerId);
-    const ipAddress = getClientIP(req);
-    console.log(`[CHEAT DETECTED] Player: ${player.username} - Missing move history`);
-    cheaterOps.record(req.session.playerId, player.username, ipAddress, fingerprint, 'missing_moves', score, 'Missing move history');
-    return res.status(400).json({ error: 'Move history required' });
+    if (score > 0) {
+      // Score > 0 but no moves = cheating
+      const player = playerOps.findById(req.session.playerId);
+      const ipAddress = getClientIP(req);
+      console.log(`[CHEAT DETECTED] Player: ${player.username} - Missing move history with score ${score}`);
+      cheaterOps.record(req.session.playerId, player.username, ipAddress, fingerprint, 'missing_moves', score, 'Missing move history');
+      return res.status(400).json({ error: 'Move history required' });
+    }
+    // Score = 0 and no moves = instant crash, allow it
   }
 
   // Parse moves: format is "direction,frame,timestamp"

@@ -33,6 +33,12 @@ async function cleanFalsePositives() {
     const qweDeleted = db.exec("SELECT changes()")[0].values[0][0];
     console.log(`✓ Deleted ${qweDeleted} entries for "qwe"\n`);
     
+    // Remove missing_moves entries (false positives from instant crashes)
+    console.log('Removing missing_moves entries (false positives from instant crashes with 0 score)...');
+    db.run("DELETE FROM cheaters WHERE cheat_type = 'missing_moves' AND attempted_score = 0");
+    const missingMovesDeleted = db.exec("SELECT changes()")[0].values[0][0];
+    console.log(`✓ Deleted ${missingMovesDeleted} missing_moves entries\n`);
+    
     // Show remaining cheaters
     const remaining = db.exec('SELECT username, COUNT(*) as count FROM cheaters GROUP BY username');
     console.log('Remaining cheaters:');
