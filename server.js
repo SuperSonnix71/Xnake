@@ -41,7 +41,7 @@ function detectPauseAbuse(moves, gameDuration) {
   }
   
   const suspiciousGaps = [];
-  const SUSPICIOUS_GAP_MS = 3000; // 3 seconds between moves is suspicious
+  const SUSPICIOUS_GAP_MS = 10000; // 10 seconds between moves is suspicious (allows for lag/thinking)
   
   for (let i = 1; i < moves.length; i++) {
     const timeDiff = moves[i].t - moves[i-1].t;
