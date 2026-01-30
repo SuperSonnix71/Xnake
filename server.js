@@ -183,26 +183,25 @@ app.post('/api/score', (req, res) => {
     return res.status(400).json({ error: 'Invalid score: exceeds maximum' });
   }
 
-  const maxPossibleScore = speedLevel * 10;
-  if (score > maxPossibleScore) {
-    const player = playerOps.findById(req.session.playerId);
-    console.log(`[CHEAT DETECTED] Player: ${player.username} (${req.session.playerId}) - Score: ${score}, Max Possible: ${maxPossibleScore}, Speed: ${speedLevel}`);
-    return res.status(400).json({ error: 'Invalid score: exceeds maximum possible for speed level' });
+  if (foodEaten) {
+    if (foodEaten * 10 !== score) {
+      const player = playerOps.findById(req.session.playerId);
+      console.log(`[CHEAT DETECTED] Player: ${player.username} (${req.session.playerId}) - Food: ${foodEaten}, Score: ${score} (expected ${foodEaten * 10})`);
+      return res.status(400).json({ error: 'Score does not match food eaten' });
+    }
   }
 
-  const minExpectedScore = speedLevel * 10;
-  if (score < minExpectedScore - 100 && speedLevel > 1) {
-    return res.status(400).json({ error: 'Invalid score: inconsistent with speed level' });
+  const maxSpeedLevel = Math.floor((150 - 50) / 3) + 1;
+  if (speedLevel > maxSpeedLevel) {
+    return res.status(400).json({ error: 'Invalid speed level' });
   }
 
-  if (gameDuration && gameDuration < speedLevel * 2) {
-    console.log(`[CHEAT DETECTED] Player: ${req.session.playerId} - Duration: ${gameDuration}s, Speed: ${speedLevel} (too fast)`);
-    return res.status(400).json({ error: 'Invalid game duration' });
-  }
-
-  if (foodEaten && Math.abs(foodEaten * 10 - score) > 10) {
-    console.log(`[CHEAT DETECTED] Player: ${req.session.playerId} - Food: ${foodEaten}, Score: ${score} (mismatch)`);
-    return res.status(400).json({ error: 'Invalid game data' });
+  if (gameDuration && speedLevel > 5) {
+    const minDuration = speedLevel * 1.5;
+    if (gameDuration < minDuration) {
+      console.log(`[CHEAT DETECTED] Player: ${req.session.playerId} - Duration: ${gameDuration}s, Speed: ${speedLevel} (too fast, min: ${minDuration}s)`);
+      return res.status(400).json({ error: 'Game completed too quickly' });
+    }
   }
 
   if (!playerOps.verifyFingerprint(req.session.playerId, fingerprint)) {
