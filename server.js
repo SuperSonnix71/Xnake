@@ -40,19 +40,9 @@ function validateGameReplay(moves, seed, expectedScore, expectedFoodEaten, gameD
   const INITIAL_SPEED = 150;
   const SPEED_INCREASE = 3;
   const MIN_SPEED = 50;
-  const MIN_MOVE_INTERVAL = 80;
   
-  if (moves.length > 0) {
-    for (let i = 1; i < moves.length; i++) {
-      const timeBetweenMoves = moves[i].t - moves[i-1].t;
-      if (timeBetweenMoves < MIN_MOVE_INTERVAL) {
-        return { 
-          valid: false, 
-          reason: `Moves too fast: ${timeBetweenMoves}ms between moves (min ${MIN_MOVE_INTERVAL}ms)` 
-        };
-      }
-    }
-  }
+  // Note: We don't validate minimum move interval because players can press keys
+  // faster than the game updates. Speed hacking is caught by game duration validation.
   
   const center = Math.floor(GRID_SIZE / 2);
   let snake = [
