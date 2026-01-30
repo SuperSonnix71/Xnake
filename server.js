@@ -442,6 +442,13 @@ app.post('/api/score', (req, res) => {
     return res.status(400).json({ error: 'Invalid score: exceeds maximum' });
   }
 
+  // Validate totalFrames
+  if (totalFrames !== undefined) {
+    if (typeof totalFrames !== 'number' || totalFrames < 0 || totalFrames > 10000 || !Number.isFinite(totalFrames)) {
+      return res.status(400).json({ error: 'Invalid totalFrames value' });
+    }
+  }
+
   if (foodEaten) {
     if (foodEaten * 10 !== score) {
       const player = playerOps.findById(req.session.playerId);
@@ -477,7 +484,7 @@ app.post('/api/score', (req, res) => {
   }
 
   // Allow empty moves only for 0-score games (instant crashes are legitimate)
-  if (!moves || typeof moves !== 'string') {
+  if (!moves || typeof moves !== 'string' || moves === '') {
     if (score > 0) {
       // Score > 0 but no moves = cheating
       const player = playerOps.findById(req.session.playerId);
@@ -486,7 +493,20 @@ app.post('/api/score', (req, res) => {
       cheaterOps.record(req.session.playerId, player.username, ipAddress, fingerprint, 'missing_moves', score, 'Missing move history');
       return res.status(400).json({ error: 'Move history required' });
     }
-    // Score = 0 and no moves = instant crash, allow it
+    
+    // Score = 0 and no moves = instant crash, allow it (skip validation)
+    activeSessions.delete(req.session.playerId);
+    
+    scoreOps.add(req.session.playerId, score, speedLevel);
+    const bestScore = scoreOps.getBestScore(req.session.playerId);
+    const rank = scoreOps.getPlayerRank(req.session.playerId);
+    
+    return res.json({ 
+      success: true, 
+      bestScore,
+      rank,
+      isNewBest: false // 0 score is never a new best
+    });
   }
 
   // Parse moves: format is "direction,frame,timestamp"
