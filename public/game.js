@@ -37,6 +37,7 @@
     let isGameRunning = false;
     let currentSpeed = CONFIG.initialSpeed;
     let animationFrame = 0;
+    let frameCount = 0;
     let playerData = null;
     let fingerprint = null;
     let gameStartTime = 0;
@@ -155,6 +156,7 @@
         score = 0;
         foodEatenCount = 0;
         moveHistory = [];
+        frameCount = 0;
         currentSpeed = CONFIG.initialSpeed;
         isPaused = false;
         updateScore();
@@ -224,20 +226,26 @@
             e.preventDefault();
             if (newDirection.x !== -direction.x || newDirection.y !== -direction.y) {
                 nextDirection = newDirection;
-                
-                const dirCode = newDirection.y === -1 ? 0 : 
-                               newDirection.x === 1 ? 1 : 
-                               newDirection.y === 1 ? 2 : 3;
-                moveHistory.push({
-                    d: dirCode,
-                    t: Date.now() - gameStartTime
-                });
             }
         }
     }
     
     function update() {
         if (isPaused) return;
+        
+        frameCount++;
+        
+        // Record move if direction changed this frame
+        if (direction.x !== nextDirection.x || direction.y !== nextDirection.y) {
+            const dirCode = nextDirection.y === -1 ? 0 : 
+                           nextDirection.x === 1 ? 1 : 
+                           nextDirection.y === 1 ? 2 : 3;
+            moveHistory.push({
+                d: dirCode,
+                f: frameCount,
+                t: Date.now() - gameStartTime
+            });
+        }
         
         animationFrame++;
         direction = nextDirection;
@@ -403,7 +411,8 @@
         try {
             const speedLevel = Math.floor((CONFIG.initialSpeed - currentSpeed) / CONFIG.speedIncrease) + 1;
             
-            const movesString = moveHistory.map(m => `${m.d},${m.t}`).join(';');
+            // Format: direction,frame,timestamp
+            const movesString = moveHistory.map(m => `${m.d},${m.f},${m.t}`).join(';');
             
             const response = await fetch('/api/score', {
                 method: 'POST',
@@ -415,7 +424,8 @@
                     gameDuration,
                     foodEaten: foodEatenCount,
                     seed: gameSeed,
-                    moves: movesString
+                    moves: movesString,
+                    totalFrames: frameCount
                 })
             });
             
