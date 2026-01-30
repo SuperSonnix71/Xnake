@@ -183,6 +183,40 @@ function validateHeartbeats(heartbeats, gameDuration, totalFrames) {
   };
 }
 
+// AI Bot Detection: Detects games with impossibly high scores combined with inefficient move patterns
+// Analysis shows legitimate human players have moves/food ratio of ~2.0-3.5
+// Bot players show ratios > 4.0 combined with scores > 1000
+function detectBotUsage(moves, foodEaten, score) {
+  if (!moves || !foodEaten || foodEaten === 0) {
+    return { isBot: false };
+  }
+  
+  const movesPerFood = moves.length / foodEaten;
+  
+  // Threshold: High score (>1000) + Inefficient move pattern (>4.0 moves/food) = Bot
+  // This catches AI models that:
+  // - Explore many paths per food (high moves/food)
+  // - Achieve impossibly high scores (>1000, 3.7x higher than best human)
+  // - Make moves faster than humans (no hesitation)
+  if (score > 1000 && movesPerFood > 4.0) {
+    return {
+      isBot: true,
+      reason: `Impossible score with bot-like move patterns (${movesPerFood.toFixed(2)} moves per food)`,
+      movesPerFood: movesPerFood,
+      details: {
+        score,
+        moves: moves.length,
+        foodEaten,
+        movesPerFood: movesPerFood.toFixed(2),
+        threshold: 4.0,
+        humanAverage: '2.0-3.5'
+      }
+    };
+  }
+  
+  return { isBot: false, movesPerFood: movesPerFood };
+}
+
 function validateGameReplay(moves, seed, expectedScore, expectedFoodEaten, gameDuration, totalFrames) {
   const GRID_SIZE = 30;
   const INITIAL_SPEED = 150;
@@ -801,6 +835,49 @@ app.post('/api/score', (req, res) => {
     return res.status(400).json({ error: 'Game validation failed: ' + validation.reason });
   }
   
+  // AI Bot Detection - Check for bot-like move patterns
+  const botCheck = detectBotUsage(parsedMoves, foodEaten, score);
+  if (botCheck.isBot) {
+    const player = playerOps.findById(req.session.playerId);
+    const ipAddress = getClientIP(req);
+    
+    // Log to persistent file
+    logCheatDetection(
+      player.username,
+      ipAddress,
+      'bot_usage',
+      score,
+      botCheck.reason,
+      `Details: ${JSON.stringify(botCheck.details)}`
+    );
+    
+    // Comprehensive logging
+    console.log(`\n========== AI BOT DETECTED ==========`);
+    console.log(`Player: ${player.username} (ID: ${player.id})`);
+    console.log(`IP Address: ${ipAddress}`);
+    console.log(`Score: ${score}`);
+    console.log(`Moves: ${parsedMoves.length}`);
+    console.log(`Food Eaten: ${foodEaten}`);
+    console.log(`Moves per Food: ${botCheck.movesPerFood.toFixed(2)}`);
+    console.log(`Reason: ${botCheck.reason}`);
+    console.log(`Details:`, JSON.stringify(botCheck.details, null, 2));
+    console.log(`=====================================\n`);
+    
+    cheaterOps.record(
+      req.session.playerId,
+      player.username,
+      ipAddress,
+      fingerprint,
+      'bot_usage',
+      score,
+      botCheck.reason
+    );
+    
+    return res.status(400).json({ 
+      error: 'AI/Bot usage detected. Human players cannot achieve this score with these move patterns.' 
+    });
+  }
+  
   // Log successful validation for high scores
   if (score >= 100) {
     const player = playerOps.findById(req.session.playerId);
@@ -808,9 +885,9 @@ app.post('/api/score', (req, res) => {
       player.username,
       score,
       'VALID',
-      `Food: ${foodEaten} | Duration: ${gameDuration}s | Speed Level: ${speedLevel} | Moves: ${parsedMoves.length}`
+      `Food: ${foodEaten} | Duration: ${gameDuration}s | Speed Level: ${speedLevel} | Moves: ${parsedMoves.length} | M/F: ${botCheck.movesPerFood?.toFixed(2) || 'N/A'}`
     );
-    console.log(`[VALID SCORE] Player: ${player.username} - Score: ${score}, Food: ${foodEaten}, Duration: ${gameDuration}s`);
+    console.log(`[VALID SCORE] Player: ${player.username} - Score: ${score}, Food: ${foodEaten}, Duration: ${gameDuration}s, M/F: ${botCheck.movesPerFood?.toFixed(2) || 'N/A'}`);
   }
 
   activeSessions.delete(req.session.playerId);

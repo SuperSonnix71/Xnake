@@ -556,14 +556,15 @@
                     const repeatOffender = entry.offense_count > 3;
                     
                     const cheatTypeLabels = {
-                        'score_mismatch': 'Score Manipulation',
+                        'score_mismatch': 'Score Tampering',
                         'speed_hack': 'Speed Hacking',
                         'replay_fail': 'Invalid Game Replay',
                         'invalid_session': 'Session Tampering',
                         'missing_moves': 'Missing Move Data',
                         'timing_invalid': 'Suspicious Timing',
                         'pause_abuse': 'Game Pausing',
-                        'timing_manipulation': 'Game Speed Manipulation'
+                        'timing_manipulation': 'Game Speed Manipulation',
+                        'bot_usage': 'AI/Bot Usage'
                     };
                     
                     let cheatLabel = cheatTypeLabels[entry.cheat_type] || entry.cheat_type;
