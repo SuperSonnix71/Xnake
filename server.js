@@ -88,6 +88,101 @@ function detectPauseAbuse(moves, gameDuration) {
   };
 }
 
+function validateHeartbeats(heartbeats, gameDuration, totalFrames) {
+  if (!heartbeats || heartbeats.length < 2) {
+    return { 
+      valid: false, 
+      reason: 'Insufficient heartbeat data (possible timing manipulation)',
+      suspicious: true
+    };
+  }
+  
+  const issues = [];
+  
+  // Parse heartbeats: format is "time,perfTime,frame,speed,score"
+  const parsed = heartbeats.map(hb => {
+    const parts = hb.split(',').map(Number);
+    return { t: parts[0], p: parts[1], f: parts[2], s: parts[3], score: parts[4] };
+  });
+  
+  // Check 1: Frame progression should be consistent with real time
+  for (let i = 1; i < parsed.length; i++) {
+    const timeDiff = parsed[i].t - parsed[i-1].t; // Real time diff (ms)
+    const frameDiff = parsed[i].f - parsed[i-1].f; // Frame diff
+    const avgSpeed = (parsed[i].s + parsed[i-1].s) / 2; // Avg speed (ms per frame)
+    
+    // Expected time = frames × speed per frame
+    const expectedTime = frameDiff * avgSpeed;
+    const tolerance = Math.max(200, expectedTime * 0.3); // 30% tolerance + 200ms buffer
+    
+    const diff = Math.abs(timeDiff - expectedTime);
+    
+    if (diff > tolerance) {
+      issues.push({
+        index: i,
+        timeDiff,
+        frameDiff,
+        expectedTime,
+        diff,
+        ratio: timeDiff / expectedTime
+      });
+    }
+  }
+  
+  // Check 2: Performance.now() should match Date.now() closely
+  for (let i = 0; i < parsed.length; i++) {
+    const timeDiff = Math.abs(parsed[i].t - parsed[i].p);
+    // They should be within a few hundred ms (performance.now is more precise but similar)
+    if (timeDiff > 5000) { // 5 second difference is suspicious
+      issues.push({
+        index: i,
+        type: 'performance_time_mismatch',
+        dateTime: parsed[i].t,
+        perfTime: parsed[i].p,
+        diff: timeDiff
+      });
+    }
+  }
+  
+  // Check 3: Overall frame/time ratio
+  const firstHB = parsed[0];
+  const lastHB = parsed[parsed.length - 1];
+  const totalTime = lastHB.t - firstHB.t;
+  const totalFramesInHB = lastHB.f - firstHB.f;
+  const avgSpeedFromHB = totalTime / totalFramesInHB;
+  
+  // At max speed (50ms), ratio should be ~50ms per frame
+  // At min speed (150ms), ratio should be ~150ms per frame
+  // Anything significantly off suggests manipulation
+  
+  if (avgSpeedFromHB > 200) { // Game running too slow (more time per frame)
+    issues.push({
+      type: 'game_too_slow',
+      avgMsPerFrame: avgSpeedFromHB,
+      totalTime,
+      totalFrames: totalFramesInHB,
+      suspectedSlowdown: avgSpeedFromHB / 100 // How many times slower
+    });
+  }
+  
+  if (avgSpeedFromHB < 40 && lastHB.f > 100) { // Game running impossibly fast
+    issues.push({
+      type: 'game_too_fast',
+      avgMsPerFrame: avgSpeedFromHB,
+      totalTime,
+      totalFrames: totalFramesInHB
+    });
+  }
+  
+  return {
+    valid: issues.length === 0,
+    issues,
+    heartbeatCount: parsed.length,
+    avgMsPerFrame: avgSpeedFromHB,
+    suspicious: issues.length > 0
+  };
+}
+
 function validateGameReplay(moves, seed, expectedScore, expectedFoodEaten, gameDuration, totalFrames) {
   const GRID_SIZE = 30;
   const INITIAL_SPEED = 150;
@@ -462,7 +557,7 @@ app.post('/api/score', (req, res) => {
     return res.status(429).json({ error: 'Too many score submissions. Please wait.' });
   }
 
-  const { score, speedLevel, fingerprint, gameDuration, foodEaten, seed, moves, totalFrames } = req.body;
+  const { score, speedLevel, fingerprint, gameDuration, foodEaten, seed, moves, totalFrames, heartbeats } = req.body;
 
   if (typeof score !== 'number' || typeof speedLevel !== 'number') {
     return res.status(400).json({ error: 'Invalid score data' });
@@ -570,6 +665,59 @@ app.post('/api/score', (req, res) => {
     }
     return null;
   }).filter(m => m && !isNaN(m.d) && !isNaN(m.f) && !isNaN(m.t));
+
+  // Validate heartbeats (timing manipulation detection)
+  if (heartbeats && typeof heartbeats === 'string' && heartbeats.length > 0 && score > 100) {
+    const parsedHeartbeats = heartbeats.split(';').map(hb => hb.trim()).filter(hb => hb.length > 0);
+    const heartbeatCheck = validateHeartbeats(parsedHeartbeats, gameDuration, totalFrames);
+    
+    if (!heartbeatCheck.valid || heartbeatCheck.suspicious) {
+      const player = playerOps.findById(req.session.playerId);
+      const ipAddress = getClientIP(req);
+      
+      logCheatDetection(
+        player.username,
+        ipAddress,
+        'timing_manipulation',
+        score,
+        'Heartbeat validation failed - possible game speed manipulation',
+        `Issues: ${JSON.stringify(heartbeatCheck.issues)} | Avg ms/frame: ${heartbeatCheck.avgMsPerFrame?.toFixed(2)}`
+      );
+      
+      console.log(`\n========== CHEAT DETECTED: TIMING MANIPULATION ==========`);
+      console.log(`Player: ${player.username} (ID: ${player.id})`);
+      console.log(`IP Address: ${ipAddress}`);
+      console.log(`Heartbeat validation failed`);
+      console.log(`Heartbeat count: ${heartbeatCheck.heartbeatCount}`);
+      console.log(`Avg ms per frame: ${heartbeatCheck.avgMsPerFrame?.toFixed(2)}`);
+      console.log(`Issues found:`, JSON.stringify(heartbeatCheck.issues, null, 2));
+      console.log(`========================================================\n`);
+      
+      cheaterOps.record(
+        req.session.playerId,
+        player.username,
+        ipAddress,
+        fingerprint,
+        'timing_manipulation',
+        score,
+        `Heartbeat validation failed: ${heartbeatCheck.issues.length} timing anomalies detected`
+      );
+      
+      return res.status(400).json({ 
+        error: 'Game timing validation failed. Please ensure you are playing at normal speed without modifications.' 
+      });
+    }
+    
+    // Log heartbeat data for high scores (investigation purposes)
+    if (score >= 1000) {
+      logGameActivity(
+        playerOps.findById(req.session.playerId).username,
+        score,
+        'HEARTBEAT_DATA',
+        `HB Count: ${heartbeatCheck.heartbeatCount} | Avg ms/frame: ${heartbeatCheck.avgMsPerFrame?.toFixed(2)} | Heartbeats: ${heartbeats.substring(0, 500)}...`
+      );
+    }
+  }
 
   // Detect pause abuse
   const pauseCheck = detectPauseAbuse(parsedMoves, gameDuration);

@@ -46,6 +46,9 @@
     let gameSeed = 0;
     let pauseStartTime = 0;
     let totalPauseTime = 0;
+    let heartbeats = [];
+    let heartbeatInterval = null;
+    let performanceStartTime = 0;
     
     async function init() {
         canvas = document.getElementById('gameCanvas');
@@ -163,9 +166,22 @@
         isPaused = false;
         pauseStartTime = 0;
         totalPauseTime = 0;
+        heartbeats = [];
         updateScore();
         updateSpeedDisplay();
         spawnFood();
+    }
+    
+    function recordHeartbeat() {
+        if (isPaused || !isGameRunning) return;
+        
+        heartbeats.push({
+            t: Date.now() - gameStartTime,           // Real elapsed time (ms)
+            p: performance.now() - performanceStartTime, // Performance time (ms)
+            f: frameCount,                            // Current frame number
+            s: currentSpeed,                          // Current game speed (ms per frame)
+            score: score                              // Current score (for debugging)
+        });
     }
     
     async function startGame() {
@@ -194,7 +210,12 @@
         document.getElementById('startScreen').classList.add('hidden');
         isGameRunning = true;
         gameStartTime = Date.now();
+        performanceStartTime = performance.now();
         resetGame();
+        
+        // Start heartbeat timer - records every 1 second
+        heartbeatInterval = setInterval(recordHeartbeat, 1000);
+        
         gameLoop = setInterval(update, currentSpeed);
     }
     
@@ -413,6 +434,10 @@
     async function gameOver() {
         isGameRunning = false;
         clearInterval(gameLoop);
+        clearInterval(heartbeatInterval);
+        
+        // Record final heartbeat
+        recordHeartbeat();
         
         const gameDuration = Math.floor((Date.now() - gameStartTime) / 1000);
         
@@ -429,6 +454,7 @@
                 const speedLevel = Math.floor((CONFIG.initialSpeed - currentSpeed) / CONFIG.speedIncrease) + 1;
                 
                 const movesString = moveHistory.map(m => `${m.d},${m.f},${m.t}`).join(';');
+                const heartbeatsString = heartbeats.map(h => `${h.t},${h.p},${h.f},${h.s},${h.score}`).join(';');
                 
                 const response = await fetch('/api/score', {
                     method: 'POST',
@@ -441,7 +467,8 @@
                         foodEaten: foodEatenCount,
                         seed: gameSeed,
                         moves: movesString,
-                        totalFrames: frameCount
+                        totalFrames: frameCount,
+                        heartbeats: heartbeatsString
                     })
                 });
                 
@@ -535,7 +562,8 @@
                         'invalid_session': 'Session Tampering',
                         'missing_moves': 'Missing Move Data',
                         'timing_invalid': 'Suspicious Timing',
-                        'pause_abuse': 'Game Pausing'
+                        'pause_abuse': 'Game Pausing',
+                        'timing_manipulation': 'Game Speed Manipulation'
                     };
                     
                     let cheatLabel = cheatTypeLabels[entry.cheat_type] || entry.cheat_type;
