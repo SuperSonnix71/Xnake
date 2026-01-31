@@ -182,6 +182,7 @@ function generateSyntheticLegitimate(count) {
  * @param {number} [options.minSamples=100]
  * @param {boolean} [options.augmentWithSynthetic=true]
  * @param {boolean} [options.returnDetailedMetrics=false]
+ * @param {boolean} [options.skipSave=false]
  * @returns {Promise<{accuracy: number, loss: number, samples: number, precision?: number, recall?: number, f1Score?: number, trainingSamples?: number, validationSamples?: number, trainingFeatures?: number[][], validationFeatures?: number[][]}>}
  */
 async function train(options = {}) {
@@ -191,7 +192,8 @@ async function train(options = {}) {
     batchSize = 32,
     minSamples = 100,
     augmentWithSynthetic = true,
-    returnDetailedMetrics = false
+    returnDetailedMetrics = false,
+    skipSave = false
   } = options;
   
   await initializeDatabase();
@@ -299,8 +301,10 @@ async function train(options = {}) {
   
   console.log(`[ML Training] Training complete. Accuracy: ${(finalAcc * 100).toFixed(2)}%, Precision: ${(precision * 100).toFixed(2)}%, Recall: ${(recall * 100).toFixed(2)}%, F1: ${(f1Score * 100).toFixed(2)}%`);
   
-  await saveModel(model, normStats);
-  console.log(`[ML Training] Model saved successfully`);
+  if (!skipSave) {
+    await saveModel(model, normStats);
+    console.log(`[ML Training] Model saved successfully`);
+  }
   
   xTrainTensor.dispose();
   yTrainTensor.dispose();

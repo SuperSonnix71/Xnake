@@ -39,9 +39,9 @@ XNAKE is a browser-based Snake game with:
 
 ## Anti-Cheat System
 
-XNAKE includes a comprehensive server-side anti-cheat system that validates all game submissions:
+XNAKE includes a comprehensive server-side anti-cheat system that validates all game submissions using both rule-based detection and machine learning.
 
-### Detection Methods
+### Rule-Based Detection
 
 | Method | Description |
 |--------|-------------|
@@ -56,12 +56,64 @@ XNAKE includes a comprehensive server-side anti-cheat system that validates all 
 | Rate Limiting | Prevents spam submissions (10 requests/minute) |
 | Input Size Validation | Rejects oversized move/heartbeat data |
 
+### ML-Based Detection
+
+A TensorFlow.js neural network provides a second layer of cheat detection by analyzing behavioral patterns that rule-based systems might miss.
+
+#### How It Works
+
+1. **Feature Extraction** - 12 behavioral features are computed from raw game data:
+   - `avg_time_between_moves` - Mean time between player inputs
+   - `move_time_variance` - Consistency of input timing
+   - `moves_per_food` - Efficiency ratio (bots often have unnaturally optimal ratios)
+   - `direction_entropy` - Randomness of direction changes
+   - `heartbeat_consistency` - Regularity of client heartbeats
+   - `score_rate` - Points earned per second
+   - `frame_timing_deviation` - Drift between reported frames and elapsed time
+   - `pause_gap_count` - Number of suspicious pauses
+   - `speed_progression` - How game speed increased over time
+   - `movement_burst_rate` - Frequency of rapid input bursts
+   - `performance_time_drift` - Difference between performance.now() and Date.now()
+   - `avg_speed_per_food` - Average game speed when collecting food
+
+2. **Neural Network** - A 3-layer network (12 → 32 → 16 → 1) with:
+   - ReLU activations in hidden layers
+   - Sigmoid output (0 = legitimate, 1 = cheater)
+   - Feature normalization using stored mean/std statistics
+
+3. **Shadow Mode** - The ML system currently runs in shadow mode:
+   - Analyzes all game submissions
+   - Logs suspicion scores but doesn't block players
+   - Flags edge cases where ML disagrees with rules for review
+
+4. **Continuous Learning** - The system improves over time:
+   - Legitimate games and caught cheats are stored as training data
+   - Model automatically retrains when new cheats are detected (5-min debounce)
+   - New models are only activated if they perform better than the current one
+   - SHAP feature importance is computed after each training run
+
+#### Model Versioning
+
+All trained models are versioned with full metrics:
+- Accuracy, precision, recall, and F1 score
+- Training sample counts
+- Automatic rollback if a new model underperforms
+
+#### Explainability (SHAP)
+
+The system uses Kernel SHAP to explain individual predictions:
+- Shows which features contributed most to a suspicion score
+- Helps identify new cheat patterns
+- Enables debugging of false positives
+
 ### Cheat Logging
 
 All detected cheating attempts are:
 - Logged to `cheat_detection.log` with full details
 - Recorded in the database with player, IP, cheat type, and reason
 - Displayed in the Hall of Shame (`/api/hallofshame`)
+
+Edge cases (ML/rules disagreements) are logged to `ml/models/edge_cases.log` for review.
 
 ## API Reference
 
@@ -89,6 +141,16 @@ All detected cheating attempts are:
 | `/api/hallofshame` | GET | Get caught cheaters (query: `?limit=50`) |
 | `/api/player/stats` | GET | Get current player statistics |
 | `/api/stats` | GET | Get global game statistics |
+
+### ML Anti-Cheat (Admin)
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/ml/status` | GET | Training status, active model info, edge case statistics |
+| `/api/ml/versions` | GET | All model versions with accuracy/precision/recall/F1 metrics |
+| `/api/ml/training-logs` | GET | Training event history (query: `?limit=50`) |
+| `/api/ml/edge-cases` | GET | Cases where ML and rules disagreed (query: `?limit=50`) |
+| `/api/ml/train` | POST | Trigger manual model retraining |
 
 ## Installation
 
@@ -125,6 +187,24 @@ All detected cheating attempts are:
 Run with auto-restart on file changes:
 ```bash
 npm run dev
+```
+
+### ML Model Training
+
+Initialize the ML versioning system (first time only):
+```bash
+npm run ml:init
+```
+
+Train/retrain the cheat detection model:
+```bash
+npm run ml:train              # Quick training (50 epochs)
+npm run ml:train:full         # Full training (100 epochs, 200+ samples)
+```
+
+Or trigger training via the API:
+```bash
+curl -X POST http://localhost:3333/api/ml/train
 ```
 
 ### Docker Deployment
@@ -196,6 +276,21 @@ snake/
 │   ├── game.js             # Game logic and rendering
 │   ├── fingerprint.js      # Browser fingerprinting
 │   └── style.css           # Styles and animations
+├── ml/
+│   ├── features.js         # Feature extraction (12 behavioral features)
+│   ├── model.js            # TensorFlow.js neural network
+│   ├── train.js            # Training pipeline with metrics
+│   ├── versioning.js       # Model versioning and rollback
+│   ├── shap.js             # SHAP explainability (Kernel SHAP)
+│   ├── worker.js           # Background training worker
+│   ├── edgecases.js        # Edge case detection and logging
+│   └── models/             # Trained models (git-excluded)
+│       └── cheat_detector/ # Active model
+├── scripts/
+│   ├── init-ml-versioning.js  # Initialize ML versioning system
+│   ├── clean_false_positives.js
+│   ├── monitor.sh
+│   └── reset-db.sh
 ├── server.js               # Express server with API and anti-cheat
 ├── database.js             # SQLite database operations
 ├── package.json            # Node.js dependencies
@@ -240,6 +335,7 @@ snake/
 - express-session for session management
 - sql.js (pure JavaScript SQLite)
 - uuid for unique ID generation
+- TensorFlow.js for ML-based cheat detection
 
 ### Frontend
 - HTML5 Canvas for game rendering

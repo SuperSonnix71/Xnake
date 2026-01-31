@@ -6,7 +6,7 @@ const fs = require('fs');
 const { initializeDatabase, playerOps, scoreOps, statsOps, cheaterOps, mlOps, closeDatabase } = require('./database');
 const { extractFeatures, featuresToArray, normalizeFeatures, createTimeSeriesFeatures } = require('./ml/features');
 const { predict, loadModel, isModelAvailable } = require('./ml/model');
-const { onCheatDetected, getTrainingStatus } = require('./ml/worker');
+const { onCheatDetected, getTrainingStatus, triggerTraining } = require('./ml/worker');
 const { processAndLogEdgeCase, getEdgeCases, getEdgeCaseStats } = require('./ml/edgecases');
 const { getActiveVersion, getAllVersions, getTrainingLogs } = require('./ml/versioning');
 
@@ -1235,6 +1235,11 @@ app.get('/api/ml/edge-cases', (req, res) => {
   const cases = getEdgeCases(limit);
   const stats = getEdgeCaseStats();
   res.json({ cases, stats });
+});
+
+app.post('/api/ml/train', async (req, res) => {
+  const result = await triggerTraining();
+  res.json(result);
 });
 
 app.post('/api/logout', (req, res) => {
