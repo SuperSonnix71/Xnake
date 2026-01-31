@@ -1,4 +1,28 @@
-# XNAKE - Modern Snake Game with Anti-Cheat System
+<p align="center">
+  <img src="assets/logo.svg" alt="XNAKE Logo" width="180">
+</p>
+
+<h1 align="center">XNAKE</h1>
+
+<p align="center">
+  <strong>Modern Snake Game with Anti-Cheat System</strong>
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/version-1.0.0-00ff00?style=flat-square" alt="Version">
+  <img src="https://img.shields.io/badge/license-MIT-blue?style=flat-square" alt="License">
+  <img src="https://img.shields.io/badge/node-18%2B-339933?style=flat-square&logo=node.js&logoColor=white" alt="Node.js">
+  <img src="https://img.shields.io/badge/platform-linux%20%7C%20macos%20%7C%20windows-lightgrey?style=flat-square" alt="Platform">
+  <img src="https://img.shields.io/badge/docker-ready-2496ED?style=flat-square&logo=docker&logoColor=white" alt="Docker">
+</p>
+
+<p align="center">
+  <a href="https://github.com/SuperSonnix71/Xnake/issues">Report Bug</a>
+  &middot;
+  <a href="https://github.com/SuperSonnix71/Xnake">View Repository</a>
+</p>
+
+---
 
 A modern Snake game built with Node.js, Express, and HTML5 Canvas. Features player registration, persistent scores, Hall of Fame leaderboard, and a comprehensive anti-cheat system to ensure fair play.
 

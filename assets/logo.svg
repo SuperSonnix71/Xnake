@@ -1,0 +1,77 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200">
+  <defs>
+    <!-- Glow filter for the neon effect -->
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <!-- Stronger glow for eyes -->
+    <filter id="eyeGlow" x="-100%" y="-100%" width="300%" height="300%">
+      <feGaussianBlur stdDeviation="2" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <!-- Gradient for snake body -->
+    <linearGradient id="snakeGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#00ff00;stop-opacity:1" />
+      <stop offset="50%" style="stop-color:#00cc00;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#009900;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  
+  <!-- Background circle -->
+  <circle cx="100" cy="100" r="95" fill="#1a1a2e" stroke="#00ff00" stroke-width="2" filter="url(#glow)"/>
+  
+  <!-- Snake body - coiled S-shape -->
+  <path 
+    d="M 60 140 
+       Q 40 140, 40 120 
+       Q 40 100, 60 100 
+       Q 80 100, 80 80 
+       Q 80 60, 100 60 
+       Q 120 60, 140 60 
+       Q 160 60, 160 80 
+       Q 160 100, 140 100 
+       Q 120 100, 120 120 
+       Q 120 140, 140 140 
+       L 150 140"
+    fill="none" 
+    stroke="url(#snakeGradient)" 
+    stroke-width="16" 
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    filter="url(#glow)"
+  />
+  
+  <!-- Snake head -->
+  <ellipse cx="158" cy="140" rx="18" ry="14" fill="#00ff00" filter="url(#glow)"/>
+  
+  <!-- Snake eyes -->
+  <circle cx="164" cy="136" r="4" fill="#ffffff" filter="url(#eyeGlow)"/>
+  <circle cx="164" cy="136" r="2" fill="#000000"/>
+  
+  <!-- Snake tongue -->
+  <path 
+    d="M 175 140 L 185 135 M 175 140 L 185 145" 
+    stroke="#ff3333" 
+    stroke-width="2" 
+    stroke-linecap="round"
+    filter="url(#glow)"
+  />
+  
+  <!-- Pixel grid pattern overlay (subtle) -->
+  <g opacity="0.1">
+    <line x1="20" y1="50" x2="180" y2="50" stroke="#00ff00" stroke-width="0.5"/>
+    <line x1="20" y1="100" x2="180" y2="100" stroke="#00ff00" stroke-width="0.5"/>
+    <line x1="20" y1="150" x2="180" y2="150" stroke="#00ff00" stroke-width="0.5"/>
+    <line x1="50" y1="20" x2="50" y2="180" stroke="#00ff00" stroke-width="0.5"/>
+    <line x1="100" y1="20" x2="100" y2="180" stroke="#00ff00" stroke-width="0.5"/>
+    <line x1="150" y1="20" x2="150" y2="180" stroke="#00ff00" stroke-width="0.5"/>
+  </g>
+</svg>
