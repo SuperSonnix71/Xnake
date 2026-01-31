@@ -3,7 +3,7 @@ npm-debug.log
 .git
 .gitignore
 .env
-*.md
+README.md
 .vscode
 .DS_Store
 .python-version
@@ -12,3 +12,18 @@ npm-debug.log
 *.py
 Makefile
 run.sh
+.serena
+
+# ML models (regenerated on startup, persisted via volume)
+ml/models/
+
+# Database (created at runtime)
+xnake.db
+
+# Test files
+test/
+coverage/
+
+# Logs
+*.log
+logs/
