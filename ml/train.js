@@ -1,6 +1,6 @@
 const tf = require('@tensorflow/tfjs');
 const { initializeDatabase, mlOps, closeDatabase } = require('../database');
-const { featuresToArray, computeNormalizationStats, normalizeFeatures } = require('./features');
+const { extractFeatures, featuresToArray, computeNormalizationStats, normalizeFeatures } = require('./features');
 const { createSimpleModel, saveModel } = require('./model');
 
 /**
@@ -21,75 +21,88 @@ function shuffle(array) {
  * @returns {Object[]}
  */
 function generateSyntheticCheats(count) {
-  const cheats = [];
+  const samples = [];
   
   for (let i = 0; i < count; i++) {
     const cheatType = Math.random();
+    const moves = [];
+    const heartbeats = [];
+    let score, foodEaten, gameDuration;
     
     if (cheatType < 0.25) {
-      cheats.push({
-        avg_time_between_moves: 50 + Math.random() * 100,
-        move_time_variance: Math.random() * 100,
-        moves_per_food: 2 + Math.random() * 3,
-        direction_entropy: 1.8 + Math.random() * 0.2,
-        heartbeat_consistency: 0.3 + Math.random() * 0.3,
-        score_rate: 15 + Math.random() * 10,
-        frame_timing_deviation: 50 + Math.random() * 100,
-        pause_gap_count: 0,
-        speed_progression: 50 + Math.random() * 50,
-        movement_burst_rate: 0.5 + Math.random() * 0.3,
-        performance_time_drift: 500 + Math.random() * 1000,
-        avg_speed_per_food: 1 + Math.random() * 2
-      });
+      gameDuration = 30 + Math.floor(Math.random() * 60);
+      foodEaten = 10 + Math.floor(Math.random() * 30);
+      score = foodEaten * 10;
+      let t = 0;
+      let f = 0;
+      for (let m = 0; m < foodEaten * 3; m++) {
+        const timeDelta = 50 + Math.random() * 100;
+        t += timeDelta;
+        f += Math.floor(timeDelta / 16);
+        moves.push({ d: Math.floor(Math.random() * 4), f, t: Math.floor(t) });
+      }
+      for (let h = 0; h < gameDuration; h++) {
+        const hbTime = h * 1000 + Math.random() * 500 - 250;
+        heartbeats.push({ t: Math.floor(hbTime), p: Math.floor(hbTime + Math.random() * 1000), f: Math.floor(hbTime / 16), s: Math.min(35, 1 + Math.floor(h / 3)) });
+      }
     } else if (cheatType < 0.5) {
-      cheats.push({
-        avg_time_between_moves: 10 + Math.random() * 20,
-        move_time_variance: Math.random() * 10,
-        moves_per_food: 1.5 + Math.random(),
-        direction_entropy: 1.95 + Math.random() * 0.05,
-        heartbeat_consistency: 0.95 + Math.random() * 0.05,
-        score_rate: 20 + Math.random() * 15,
-        frame_timing_deviation: Math.random() * 5,
-        pause_gap_count: 0,
-        speed_progression: 100 + Math.random() * 50,
-        movement_burst_rate: 0.1 + Math.random() * 0.1,
-        performance_time_drift: Math.random() * 50,
-        avg_speed_per_food: 0.5 + Math.random() * 0.5
-      });
+      gameDuration = 60 + Math.floor(Math.random() * 120);
+      foodEaten = 30 + Math.floor(Math.random() * 50);
+      score = foodEaten * 10;
+      let t = 0;
+      let f = 0;
+      for (let m = 0; m < foodEaten * 1.5; m++) {
+        const timeDelta = 10 + Math.random() * 20;
+        t += timeDelta;
+        f += 1;
+        moves.push({ d: Math.floor(Math.random() * 4), f, t: Math.floor(t) });
+      }
+      for (let h = 0; h < gameDuration; h++) {
+        heartbeats.push({ t: h * 1000, p: h * 1000, f: h * 60, s: Math.min(35, 1 + Math.floor(h / 2)) });
+      }
     } else if (cheatType < 0.75) {
-      cheats.push({
-        avg_time_between_moves: 200 + Math.random() * 300,
-        move_time_variance: 5000 + Math.random() * 10000,
-        moves_per_food: 10 + Math.random() * 20,
-        direction_entropy: 1 + Math.random() * 0.5,
-        heartbeat_consistency: 0.1 + Math.random() * 0.2,
-        score_rate: 1 + Math.random() * 3,
-        frame_timing_deviation: 200 + Math.random() * 300,
-        pause_gap_count: 3 + Math.floor(Math.random() * 5),
-        speed_progression: Math.random() * 10,
-        movement_burst_rate: Math.random() * 0.1,
-        performance_time_drift: 100 + Math.random() * 500,
-        avg_speed_per_food: 5 + Math.random() * 10
-      });
+      gameDuration = 100 + Math.floor(Math.random() * 200);
+      foodEaten = 5 + Math.floor(Math.random() * 10);
+      score = foodEaten * 10;
+      let t = 0;
+      let f = 0;
+      let pauseCount = 3 + Math.floor(Math.random() * 5);
+      for (let m = 0; m < foodEaten * 15; m++) {
+        let timeDelta = 200 + Math.random() * 300;
+        if (pauseCount > 0 && Math.random() < 0.1) {
+          timeDelta += 5000 + Math.random() * 15000;
+          pauseCount--;
+        }
+        t += timeDelta;
+        f += Math.floor(timeDelta / 16);
+        moves.push({ d: Math.floor(Math.random() * 2), f, t: Math.floor(t) });
+      }
+      for (let h = 0; h < gameDuration; h++) {
+        const gap = Math.random() < 0.2 ? 3000 + Math.random() * 5000 : 1000;
+        heartbeats.push({ t: Math.floor(h * gap), p: Math.floor(h * gap + Math.random() * 500), f: Math.floor(h * gap / 16), s: Math.min(10, 1 + Math.floor(h / 10)) });
+      }
     } else {
-      cheats.push({
-        avg_time_between_moves: 100 + Math.random() * 150,
-        move_time_variance: 100 + Math.random() * 500,
-        moves_per_food: 5 + Math.random() * 10,
-        direction_entropy: 1.5 + Math.random() * 0.3,
-        heartbeat_consistency: 0.5 + Math.random() * 0.3,
-        score_rate: 8 + Math.random() * 7,
-        frame_timing_deviation: 30 + Math.random() * 70,
-        pause_gap_count: Math.floor(Math.random() * 2),
-        speed_progression: 20 + Math.random() * 30,
-        movement_burst_rate: 0.2 + Math.random() * 0.3,
-        performance_time_drift: 200 + Math.random() * 400,
-        avg_speed_per_food: 2 + Math.random() * 3
-      });
+      gameDuration = 60 + Math.floor(Math.random() * 100);
+      foodEaten = 15 + Math.floor(Math.random() * 25);
+      score = foodEaten * 10;
+      let t = 0;
+      let f = 0;
+      for (let m = 0; m < foodEaten * 7; m++) {
+        const timeDelta = 100 + Math.random() * 150 + (Math.random() < 0.3 ? 500 + Math.random() * 1000 : 0);
+        t += timeDelta;
+        f += Math.floor(timeDelta / 16);
+        moves.push({ d: Math.floor(Math.random() * 4), f, t: Math.floor(t) });
+      }
+      for (let h = 0; h < gameDuration; h++) {
+        const drift = 200 + Math.random() * 400;
+        heartbeats.push({ t: Math.floor(h * 1000 + drift), p: Math.floor(h * 1000), f: Math.floor(h * 60), s: Math.min(35, 1 + Math.floor(h / 2)) });
+      }
     }
+    
+    samples.push({ moves, heartbeats, score, foodEaten, gameDuration, isCheat: true });
   }
   
-  return cheats;
+  return samples;
 }
 
 /**
@@ -97,60 +110,68 @@ function generateSyntheticCheats(count) {
  * @returns {Object[]}
  */
 function generateSyntheticLegitimate(count) {
-  const legitimate = [];
+  const samples = [];
   
   for (let i = 0; i < count; i++) {
     const skillLevel = Math.random();
+    const moves = [];
+    const heartbeats = [];
+    let score, foodEaten, gameDuration;
     
     if (skillLevel < 0.33) {
-      legitimate.push({
-        avg_time_between_moves: 300 + Math.random() * 400,
-        move_time_variance: 10000 + Math.random() * 20000,
-        moves_per_food: 15 + Math.random() * 25,
-        direction_entropy: 1.3 + Math.random() * 0.4,
-        heartbeat_consistency: 0.7 + Math.random() * 0.2,
-        score_rate: 0.5 + Math.random() * 2,
-        frame_timing_deviation: 50 + Math.random() * 100,
-        pause_gap_count: 0,
-        speed_progression: Math.random() * 20,
-        movement_burst_rate: 0.05 + Math.random() * 0.15,
-        performance_time_drift: Math.random() * 100,
-        avg_speed_per_food: 3 + Math.random() * 5
-      });
+      gameDuration = 30 + Math.floor(Math.random() * 60);
+      foodEaten = 5 + Math.floor(Math.random() * 15);
+      score = foodEaten * 10;
+      let t = 0;
+      let f = 0;
+      for (let m = 0; m < foodEaten * (15 + Math.random() * 10); m++) {
+        const timeDelta = 300 + Math.random() * 400 + (Math.random() < 0.1 ? 500 + Math.random() * 500 : 0);
+        t += timeDelta;
+        f += Math.floor(timeDelta / 16);
+        moves.push({ d: Math.floor(Math.random() * 4), f, t: Math.floor(t) });
+      }
+      for (let h = 0; h < gameDuration; h++) {
+        const jitter = Math.random() * 100 - 50;
+        heartbeats.push({ t: Math.floor(h * 1000 + jitter), p: Math.floor(h * 1000 + jitter + Math.random() * 30), f: Math.floor(h * 60), s: Math.min(16, 1 + Math.floor(foodEaten / 5)) });
+      }
     } else if (skillLevel < 0.66) {
-      legitimate.push({
-        avg_time_between_moves: 200 + Math.random() * 200,
-        move_time_variance: 5000 + Math.random() * 10000,
-        moves_per_food: 8 + Math.random() * 12,
-        direction_entropy: 1.5 + Math.random() * 0.3,
-        heartbeat_consistency: 0.75 + Math.random() * 0.2,
-        score_rate: 2 + Math.random() * 4,
-        frame_timing_deviation: 30 + Math.random() * 50,
-        pause_gap_count: 0,
-        speed_progression: 10 + Math.random() * 30,
-        movement_burst_rate: 0.1 + Math.random() * 0.2,
-        performance_time_drift: Math.random() * 80,
-        avg_speed_per_food: 2 + Math.random() * 3
-      });
+      gameDuration = 60 + Math.floor(Math.random() * 90);
+      foodEaten = 15 + Math.floor(Math.random() * 30);
+      score = foodEaten * 10;
+      let t = 0;
+      let f = 0;
+      for (let m = 0; m < foodEaten * (8 + Math.random() * 4); m++) {
+        const timeDelta = 200 + Math.random() * 200 + (Math.random() < 0.05 ? 300 + Math.random() * 300 : 0);
+        t += timeDelta;
+        f += Math.floor(timeDelta / 16);
+        moves.push({ d: Math.floor(Math.random() * 4), f, t: Math.floor(t) });
+      }
+      for (let h = 0; h < gameDuration; h++) {
+        const jitter = Math.random() * 60 - 30;
+        heartbeats.push({ t: Math.floor(h * 1000 + jitter), p: Math.floor(h * 1000 + jitter + Math.random() * 20), f: Math.floor(h * 60), s: Math.min(30, 1 + Math.floor(foodEaten / 3)) });
+      }
     } else {
-      legitimate.push({
-        avg_time_between_moves: 150 + Math.random() * 150,
-        move_time_variance: 2000 + Math.random() * 5000,
-        moves_per_food: 5 + Math.random() * 8,
-        direction_entropy: 1.6 + Math.random() * 0.25,
-        heartbeat_consistency: 0.8 + Math.random() * 0.15,
-        score_rate: 4 + Math.random() * 6,
-        frame_timing_deviation: 15 + Math.random() * 30,
-        pause_gap_count: 0,
-        speed_progression: 20 + Math.random() * 40,
-        movement_burst_rate: 0.15 + Math.random() * 0.2,
-        performance_time_drift: Math.random() * 60,
-        avg_speed_per_food: 1 + Math.random() * 2
-      });
+      gameDuration = 90 + Math.floor(Math.random() * 150);
+      foodEaten = 40 + Math.floor(Math.random() * 60);
+      score = foodEaten * 10;
+      let t = 0;
+      let f = 0;
+      for (let m = 0; m < foodEaten * (5 + Math.random() * 3); m++) {
+        const timeDelta = 150 + Math.random() * 150;
+        t += timeDelta;
+        f += Math.floor(timeDelta / 16);
+        moves.push({ d: Math.floor(Math.random() * 4), f, t: Math.floor(t) });
+      }
+      for (let h = 0; h < gameDuration; h++) {
+        const jitter = Math.random() * 40 - 20;
+        heartbeats.push({ t: Math.floor(h * 1000 + jitter), p: Math.floor(h * 1000 + jitter + Math.random() * 15), f: Math.floor(h * 60), s: Math.min(35, 1 + Math.floor(foodEaten / 2)) });
+      }
     }
+    
+    samples.push({ moves, heartbeats, score, foodEaten, gameDuration, isCheat: false });
   }
   
-  return legitimate;
+  return samples;
 }
 
 /**
@@ -198,13 +219,15 @@ async function train(options = {}) {
     const syntheticCheats = generateSyntheticCheats(neededCheats);
     const syntheticLegit = generateSyntheticLegitimate(neededLegit);
     
-    syntheticCheats.forEach((/** @type {Object} */ f) => {
-      allFeatures.push(f);
+    syntheticCheats.forEach((/** @type {any} */ sample) => {
+      const features = extractFeatures(sample.moves, sample.heartbeats, sample.score, sample.foodEaten, sample.gameDuration);
+      allFeatures.push(features);
       allLabels.push(1);
     });
     
-    syntheticLegit.forEach((/** @type {Object} */ f) => {
-      allFeatures.push(f);
+    syntheticLegit.forEach((/** @type {any} */ sample) => {
+      const features = extractFeatures(sample.moves, sample.heartbeats, sample.score, sample.foodEaten, sample.gameDuration);
+      allFeatures.push(features);
       allLabels.push(0);
     });
   }
