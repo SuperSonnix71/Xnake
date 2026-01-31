@@ -39,7 +39,7 @@ XNAKE is a browser-based Snake game with:
 
 ## Anti-Cheat System
 
-XNAKE includes a comprehensive server-side anti-cheat system that validates all game submissions using both rule-based detection and machine learning.
+XNAKE includes a comprehensive server-side anti-cheat system that validates all game submissions using both rule-based detection and a neural network.
 
 ### Rule-Based Detection
 
@@ -56,9 +56,9 @@ XNAKE includes a comprehensive server-side anti-cheat system that validates all 
 | Rate Limiting | Prevents spam submissions (10 requests/minute) |
 | Input Size Validation | Rejects oversized move/heartbeat data |
 
-### ML-Based Detection
+### Neural Network Detection
 
-A TensorFlow.js neural network provides a second layer of cheat detection by analyzing behavioral patterns that rule-based systems might miss.
+A TensorFlow.js neural network provides a second layer of cheat detection by analyzing behavioral patterns that rule-based systems might miss. The network automatically improves over time by retraining on real gameplay data.
 
 #### How It Works
 
@@ -76,20 +76,22 @@ A TensorFlow.js neural network provides a second layer of cheat detection by ana
    - `performance_time_drift` - Difference between performance.now() and Date.now()
    - `avg_speed_per_food` - Average game speed when collecting food
 
-2. **Neural Network** - A 3-layer network (12 → 32 → 16 → 1) with:
-   - ReLU activations in hidden layers
-   - Sigmoid output (0 = legitimate, 1 = cheater)
-   - Feature normalization using stored mean/std statistics
+2. **Neural Network Architecture** - A 3-layer fully connected network:
+   - **Input Layer**: 12 behavioral features (normalized using stored mean/std statistics)
+   - **Hidden Layer 1**: 32 neurons with ReLU activation + dropout
+   - **Hidden Layer 2**: 16 neurons with ReLU activation + dropout
+   - **Output Layer**: 1 neuron with sigmoid activation (0 = legitimate, 1 = cheater)
 
-3. **Shadow Mode** - The ML system currently runs in shadow mode:
+3. **Shadow Mode** - The neural network currently runs in shadow mode:
    - Analyzes all game submissions
    - Logs suspicion scores but doesn't block players
-   - Flags edge cases where ML disagrees with rules for review
+   - Flags edge cases where the neural network disagrees with rules for review
 
-4. **Continuous Learning** - The system improves over time:
-   - Legitimate games and caught cheats are stored as training data
-   - Model automatically retrains when new cheats are detected (5-min debounce)
+4. **Continuous Learning** - The neural network improves over time:
+   - Every legitimate game and caught cheat is stored as training data
+   - The model automatically retrains when new cheats are detected (5-min debounce)
    - New models are only activated if they perform better than the current one
+   - The more games played, the more accurate the detection becomes
    - SHAP feature importance is computed after each training run
 
 #### Model Versioning
@@ -113,7 +115,7 @@ All detected cheating attempts are:
 - Recorded in the database with player, IP, cheat type, and reason
 - Displayed in the Hall of Shame (`/api/hallofshame`)
 
-Edge cases (ML/rules disagreements) are logged to `ml/models/edge_cases.log` for review.
+Edge cases (neural network/rules disagreements) are logged to `ml/models/edge_cases.log` for review.
 
 ## API Reference
 
@@ -142,14 +144,14 @@ Edge cases (ML/rules disagreements) are logged to `ml/models/edge_cases.log` for
 | `/api/player/stats` | GET | Get current player statistics |
 | `/api/stats` | GET | Get global game statistics |
 
-### ML Anti-Cheat (Admin)
+### Neural Network Anti-Cheat (Admin)
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
 | `/api/ml/status` | GET | Training status, active model info, edge case statistics |
 | `/api/ml/versions` | GET | All model versions with accuracy/precision/recall/F1 metrics |
 | `/api/ml/training-logs` | GET | Training event history (query: `?limit=50`) |
-| `/api/ml/edge-cases` | GET | Cases where ML and rules disagreed (query: `?limit=50`) |
+| `/api/ml/edge-cases` | GET | Cases where neural network and rules disagreed (query: `?limit=50`) |
 | `/api/ml/train` | POST | Trigger manual model retraining |
 
 ## Installation
@@ -189,9 +191,9 @@ Run with auto-restart on file changes:
 npm run dev
 ```
 
-### ML Model Training
+### Neural Network Training
 
-Initialize the ML versioning system (first time only):
+Initialize the neural network versioning system (first time only):
 ```bash
 npm run ml:init
 ```
@@ -287,7 +289,7 @@ snake/
 │   └── models/             # Trained models (git-excluded)
 │       └── cheat_detector/ # Active model
 ├── scripts/
-│   ├── init-ml-versioning.js  # Initialize ML versioning system
+│   ├── init-ml-versioning.js  # Initialize neural network versioning system
 │   ├── clean_false_positives.js
 │   ├── monitor.sh
 │   └── reset-db.sh
@@ -335,7 +337,7 @@ snake/
 - express-session for session management
 - sql.js (pure JavaScript SQLite)
 - uuid for unique ID generation
-- TensorFlow.js for ML-based cheat detection
+- TensorFlow.js for neural network-based cheat detection
 
 ### Frontend
 - HTML5 Canvas for game rendering
