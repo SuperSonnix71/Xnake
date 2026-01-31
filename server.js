@@ -1,48 +1,120 @@
 const express = require('express');
+/** @type {any} */
 const session = require('express-session');
 const path = require('path');
 const fs = require('fs');
 const { initializeDatabase, playerOps, scoreOps, statsOps, cheaterOps, closeDatabase } = require('./database');
 
-const app = express();
-const PORT = process.env.PORT || 3000;
+/** @typedef {import('express').Request} Request */
+/** @typedef {import('express').Response} Response */
+/** @typedef {{ d: number, f: number, t: number }} Move */
+/** @typedef {{ moveIndex: number, gapMs: number, gapSeconds: number }} SuspiciousGap */
+/** @typedef {{ hasPause: boolean, suspiciousGaps: SuspiciousGap[], totalSuspiciousTime?: number, gapCount?: number }} PauseCheckResult */
+/** @typedef {{ valid: boolean, reason?: string, suspicious?: boolean, issues?: object[], heartbeatCount?: number, avgMsPerFrame?: number }} HeartbeatValidationResult */
+/** @typedef {{ isBot: boolean, reason?: string, movesPerFood?: number, details?: object }} BotDetectionResult */
+/** @typedef {{ frames: object[], summary: object, errors: string[] }} GameValidationLog */
+/** @typedef {{ valid: boolean, reason?: string, replayedScore?: number, replayedFoodEaten?: number, log: GameValidationLog }} GameValidationResult */
+/** @typedef {{ seed: number, startTime: number }} GameSession */
 
+const app = express();
+const PORT = Number(process.env.PORT) || 3000;
+
+/** @type {Map<string, number[]>} */
 const rateLimit = new Map();
+/** @type {Map<string, GameSession>} */
 const activeSessions = new Map();
 
-// Persistent logging setup
+const SESSION_TIMEOUT_MS = 30 * 60 * 1000;
+const CLEANUP_INTERVAL_MS = 5 * 60 * 1000;
+
+/** @returns {void} */
+function cleanupStaleSessions() {
+  const now = Date.now();
+  
+  for (const [playerId, gameSession] of activeSessions) {
+    if (now - gameSession.startTime > SESSION_TIMEOUT_MS) {
+      activeSessions.delete(playerId);
+    }
+  }
+  
+  for (const [playerId, timestamps] of rateLimit) {
+    const recent = timestamps.filter((/** @type {number} */ t) => now - t < 3600000);
+    if (recent.length === 0) {
+      rateLimit.delete(playerId);
+    } else {
+      rateLimit.set(playerId, recent);
+    }
+  }
+}
+
+setInterval(cleanupStaleSessions, CLEANUP_INTERVAL_MS);
+
 const gameLogPath = path.join(__dirname, 'game_activity.log');
 const cheatLogPath = path.join(__dirname, 'cheat_detection.log');
 
+/**
+ * @param {string} filePath
+ * @param {string} message
+ * @returns {void}
+ */
 function logToFile(filePath, message) {
   const timestamp = new Date().toISOString();
   const logEntry = `[${timestamp}] ${message}\n`;
   fs.appendFileSync(filePath, logEntry);
 }
 
+/**
+ * @param {string} player
+ * @param {number} score
+ * @param {string} result
+ * @param {string} [details='']
+ * @returns {void}
+ */
 function logGameActivity(player, score, result, details = '') {
   const message = `Player: ${player} | Score: ${score} | Result: ${result} | ${details}`;
   logToFile(gameLogPath, message);
   console.log(`[GAME] ${message}`);
 }
 
+/**
+ * @param {string} player
+ * @param {string} ip
+ * @param {string} cheatType
+ * @param {number} score
+ * @param {string} reason
+ * @param {string} [details='']
+ * @returns {void}
+ */
 function logCheatDetection(player, ip, cheatType, score, reason, details = '') {
   const message = `Player: ${player} | IP: ${ip} | Type: ${cheatType} | Score: ${score} | Reason: ${reason} | ${details}`;
   logToFile(cheatLogPath, message);
   console.log(`[CHEAT] ${message}`);
 }
 
+/**
+ * @param {Request} req
+ * @returns {string}
+ */
 function getClientIP(req) {
-  return req.headers['x-forwarded-for']?.split(',')[0].trim() || 
-         req.headers['x-real-ip'] || 
+  const forwarded = req.headers['x-forwarded-for'];
+  if (typeof forwarded === 'string') {
+    return forwarded.split(',')[0].trim();
+  }
+  return /** @type {string} */ (req.headers['x-real-ip']) || 
          req.socket.remoteAddress || 
          'unknown';
 }
 
+/**
+ * @param {string} playerId
+ * @param {number} [maxRequests=10]
+ * @param {number} [windowMs=60000]
+ * @returns {boolean}
+ */
 function checkRateLimit(playerId, maxRequests = 10, windowMs = 60000) {
   const now = Date.now();
   const playerRequests = rateLimit.get(playerId) || [];
-  const recentRequests = playerRequests.filter(time => now - time < windowMs);
+  const recentRequests = playerRequests.filter((/** @type {number} */ time) => now - time < windowMs);
   
   if (recentRequests.length >= maxRequests) {
     return false;
@@ -53,18 +125,28 @@ function checkRateLimit(playerId, maxRequests = 10, windowMs = 60000) {
   return true;
 }
 
-function seededRandom(seed) {
-  const x = Math.sin(seed++) * 10000;
+/**
+ * @param {number} seedValue
+ * @returns {number}
+ */
+function seededRandom(seedValue) {
+  const x = Math.sin(seedValue) * 10000;
   return x - Math.floor(x);
 }
 
-function detectPauseAbuse(moves, gameDuration) {
+/**
+ * @param {Move[]} moves
+ * @param {number} _gameDuration
+ * @returns {PauseCheckResult}
+ */
+function detectPauseAbuse(moves, _gameDuration) {
   if (!moves || moves.length < 2) {
     return { hasPause: false, suspiciousGaps: [] };
   }
   
+  /** @type {SuspiciousGap[]} */
   const suspiciousGaps = [];
-  const SUSPICIOUS_GAP_MS = 10000; // 10 seconds between moves is suspicious (allows for lag/thinking)
+  const SUSPICIOUS_GAP_MS = 10000;
   
   for (let i = 1; i < moves.length; i++) {
     const timeDiff = moves[i].t - moves[i-1].t;
@@ -88,7 +170,13 @@ function detectPauseAbuse(moves, gameDuration) {
   };
 }
 
-function validateHeartbeats(heartbeats, gameDuration, totalFrames) {
+/**
+ * @param {string[]} heartbeats
+ * @param {number} _gameDuration
+ * @param {number} _totalFrames
+ * @returns {HeartbeatValidationResult}
+ */
+function validateHeartbeats(heartbeats, _gameDuration, _totalFrames) {
   if (!heartbeats || heartbeats.length < 2) {
     return { 
       valid: false, 
@@ -97,23 +185,21 @@ function validateHeartbeats(heartbeats, gameDuration, totalFrames) {
     };
   }
   
+  /** @type {object[]} */
   const issues = [];
   
-  // Parse heartbeats: format is "time,perfTime,frame,speed,score"
-  const parsed = heartbeats.map(hb => {
+  const parsed = heartbeats.map((/** @type {string} */ hb) => {
     const parts = hb.split(',').map(Number);
     return { t: parts[0], p: parts[1], f: parts[2], s: parts[3], score: parts[4] };
   });
   
-  // Check 1: Frame progression should be consistent with real time
   for (let i = 1; i < parsed.length; i++) {
-    const timeDiff = parsed[i].t - parsed[i-1].t; // Real time diff (ms)
-    const frameDiff = parsed[i].f - parsed[i-1].f; // Frame diff
-    const avgSpeed = (parsed[i].s + parsed[i-1].s) / 2; // Avg speed (ms per frame)
+    const timeDiff = parsed[i].t - parsed[i-1].t;
+    const frameDiff = parsed[i].f - parsed[i-1].f;
+    const avgSpeed = (parsed[i].s + parsed[i-1].s) / 2;
     
-    // Expected time = frames × speed per frame
     const expectedTime = frameDiff * avgSpeed;
-    const tolerance = Math.max(200, expectedTime * 0.3); // 30% tolerance + 200ms buffer
+    const tolerance = Math.max(200, expectedTime * 0.3);
     
     const diff = Math.abs(timeDiff - expectedTime);
     
@@ -129,11 +215,9 @@ function validateHeartbeats(heartbeats, gameDuration, totalFrames) {
     }
   }
   
-  // Check 2: Performance.now() should match Date.now() closely
   for (let i = 0; i < parsed.length; i++) {
     const timeDiff = Math.abs(parsed[i].t - parsed[i].p);
-    // They should be within a few hundred ms (performance.now is more precise but similar)
-    if (timeDiff > 5000) { // 5 second difference is suspicious
+    if (timeDiff > 5000) {
       issues.push({
         index: i,
         type: 'performance_time_mismatch',
@@ -144,28 +228,23 @@ function validateHeartbeats(heartbeats, gameDuration, totalFrames) {
     }
   }
   
-  // Check 3: Overall frame/time ratio
   const firstHB = parsed[0];
   const lastHB = parsed[parsed.length - 1];
   const totalTime = lastHB.t - firstHB.t;
   const totalFramesInHB = lastHB.f - firstHB.f;
   const avgSpeedFromHB = totalTime / totalFramesInHB;
   
-  // At max speed (50ms), ratio should be ~50ms per frame
-  // At min speed (150ms), ratio should be ~150ms per frame
-  // Anything significantly off suggests manipulation
-  
-  if (avgSpeedFromHB > 200) { // Game running too slow (more time per frame)
+  if (avgSpeedFromHB > 200) {
     issues.push({
       type: 'game_too_slow',
       avgMsPerFrame: avgSpeedFromHB,
       totalTime,
       totalFrames: totalFramesInHB,
-      suspectedSlowdown: avgSpeedFromHB / 100 // How many times slower
+      suspectedSlowdown: avgSpeedFromHB / 100
     });
   }
   
-  if (avgSpeedFromHB < 40 && lastHB.f > 100) { // Game running impossibly fast
+  if (avgSpeedFromHB < 40 && lastHB.f > 100) {
     issues.push({
       type: 'game_too_fast',
       avgMsPerFrame: avgSpeedFromHB,
@@ -183,9 +262,12 @@ function validateHeartbeats(heartbeats, gameDuration, totalFrames) {
   };
 }
 
-// AI Bot Detection: Detects games with impossibly high scores combined with inefficient move patterns
-// Analysis shows legitimate human players have moves/food ratio of ~2.0-3.5
-// Bot players show ratios > 4.0 combined with scores > 1000
+/**
+ * @param {Move[]} moves
+ * @param {number} foodEaten
+ * @param {number} score
+ * @returns {BotDetectionResult}
+ */
 function detectBotUsage(moves, foodEaten, score) {
   if (!moves || !foodEaten || foodEaten === 0) {
     return { isBot: false };
@@ -193,16 +275,11 @@ function detectBotUsage(moves, foodEaten, score) {
   
   const movesPerFood = moves.length / foodEaten;
   
-  // Threshold: High score (>1000) + Inefficient move pattern (>4.0 moves/food) = Bot
-  // This catches AI models that:
-  // - Explore many paths per food (high moves/food)
-  // - Achieve impossibly high scores (>1000, 3.7x higher than best human)
-  // - Make moves faster than humans (no hesitation)
   if (score > 1000 && movesPerFood > 4.0) {
     return {
       isBot: true,
       reason: `Impossible score with bot-like move patterns (${movesPerFood.toFixed(2)} moves per food)`,
-      movesPerFood: movesPerFood,
+      movesPerFood,
       details: {
         score,
         moves: moves.length,
@@ -214,15 +291,34 @@ function detectBotUsage(moves, foodEaten, score) {
     };
   }
   
-  return { isBot: false, movesPerFood: movesPerFood };
+  return { isBot: false, movesPerFood };
 }
 
+/**
+ * @param {{ x: number, y: number }} pos
+ * @param {{ x: number, y: number }[]} snakeBody
+ * @returns {boolean}
+ */
+function isPositionOnSnake(pos, snakeBody) {
+  return snakeBody.some(seg => seg.x === pos.x && seg.y === pos.y);
+}
+
+/**
+ * @param {Move[]} moves
+ * @param {number} seed
+ * @param {number} expectedScore
+ * @param {number} expectedFoodEaten
+ * @param {number} gameDuration
+ * @param {number} totalFrames
+ * @returns {GameValidationResult}
+ */
 function validateGameReplay(moves, seed, expectedScore, expectedFoodEaten, gameDuration, totalFrames) {
   const GRID_SIZE = 30;
   const INITIAL_SPEED = 150;
   const SPEED_INCREASE = 3;
   const MIN_SPEED = 50;
   
+  /** @type {GameValidationLog} */
   const log = {
     frames: [],
     summary: {},
@@ -230,7 +326,8 @@ function validateGameReplay(moves, seed, expectedScore, expectedFoodEaten, gameD
   };
   
   const center = Math.floor(GRID_SIZE / 2);
-  let snake = [
+  /** @type {{ x: number, y: number }[]} */
+  const snake = [
     { x: center, y: center },
     { x: center - 1, y: center },
     { x: center - 2, y: center }
@@ -241,7 +338,9 @@ function validateGameReplay(moves, seed, expectedScore, expectedFoodEaten, gameD
   let foodEaten = 0;
   let currentSpeed = INITIAL_SPEED;
   
+  /** @returns {{ x: number, y: number }} */
   function spawnFood() {
+    /** @type {{ x: number, y: number }} */
     let newFood;
     let attempts = 0;
     const maxAttempts = GRID_SIZE * GRID_SIZE;
@@ -253,7 +352,7 @@ function validateGameReplay(moves, seed, expectedScore, expectedFoodEaten, gameD
         y: Math.floor(seededRandom(seed + foodEaten + attempts + 1) * GRID_SIZE)
       };
       attempts++;
-    } while (snake.some(seg => seg.x === newFood.x && seg.y === newFood.y) && attempts < maxAttempts);
+    } while (isPositionOnSnake(newFood, snake) && attempts < maxAttempts);
     
     return newFood;
   }
@@ -423,8 +522,8 @@ function validateGameReplay(moves, seed, expectedScore, expectedFoodEaten, gameD
   };
 }
 
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: '100kb' }));
+app.use(express.urlencoded({ extended: true, limit: '100kb' }));
 
 app.use(session({
   secret: process.env.SESSION_SECRET || 'xnake-secret-key-change-in-production',
@@ -466,8 +565,10 @@ app.post('/api/register', (req, res) => {
     return res.status(409).json({ error: 'Username already taken' });
   }
 
-  req.session.playerId = player.id;
-  req.session.username = player.username;
+  /** @type {any} */
+  const sessionData = req.session;
+  sessionData.playerId = player.id;
+  sessionData.username = player.username;
 
   res.json({ 
     success: true, 
@@ -479,8 +580,10 @@ app.post('/api/register', (req, res) => {
 });
 
 app.get('/api/session', (req, res) => {
-  if (req.session.playerId) {
-    const player = playerOps.findById(req.session.playerId);
+  /** @type {any} */
+  const sessionData = req.session;
+  if (sessionData.playerId) {
+    const player = playerOps.findById(sessionData.playerId);
     if (player) {
       playerOps.updateLastSeen(player.id);
       const bestScore = scoreOps.getBestScore(player.id);
@@ -504,19 +607,21 @@ app.get('/api/session', (req, res) => {
 });
 
 app.post('/api/game/start', (req, res) => {
-  if (!req.session.playerId) {
+  /** @type {any} */
+  const sessionData = req.session;
+  if (!sessionData.playerId) {
     return res.status(401).json({ error: 'Not authenticated' });
   }
 
   const { fingerprint } = req.body;
   
-  if (!playerOps.verifyFingerprint(req.session.playerId, fingerprint)) {
+  if (!playerOps.verifyFingerprint(sessionData.playerId, fingerprint)) {
     return res.status(403).json({ error: 'Fingerprint verification failed' });
   }
 
   const seed = Math.floor(Math.random() * 1000000);
   
-  activeSessions.set(req.session.playerId, {
+  activeSessions.set(sessionData.playerId, {
     seed,
     startTime: Date.now()
   });
@@ -531,11 +636,17 @@ app.post('/api/verify', (req, res) => {
     return res.status(400).json({ error: 'Fingerprint required' });
   }
 
-  if (req.session.playerId) {
-    const isValid = playerOps.verifyFingerprint(req.session.playerId, fingerprint);
+  /** @type {any} */
+  const sessionData = req.session;
+  if (sessionData.playerId) {
+    const isValid = playerOps.verifyFingerprint(sessionData.playerId, fingerprint);
     
     if (isValid) {
-      const player = playerOps.findById(req.session.playerId);
+      const player = playerOps.findById(sessionData.playerId);
+      if (!player) {
+        req.session.destroy(() => undefined);
+        return res.json({ verified: false, reason: 'player_not_found' });
+      }
       const bestScore = scoreOps.getBestScore(player.id);
       const totalGames = scoreOps.getTotalGames(player.id);
       const rank = scoreOps.getPlayerRank(player.id);
@@ -550,16 +661,16 @@ app.post('/api/verify', (req, res) => {
           rank
         }
       });
-    } else {
-      req.session.destroy();
-      return res.json({ verified: false, reason: 'fingerprint_mismatch' });
-    }
+    } 
+    req.session.destroy(() => undefined);
+    return res.json({ verified: false, reason: 'fingerprint_mismatch' });
+    
   }
 
   const player = playerOps.findByFingerprint(fingerprint);
   if (player) {
-    req.session.playerId = player.id;
-    req.session.username = player.username;
+    sessionData.playerId = player.id;
+    sessionData.username = player.username;
     playerOps.updateLastSeen(player.id);
     
     const bestScore = scoreOps.getBestScore(player.id);
@@ -583,15 +694,25 @@ app.post('/api/verify', (req, res) => {
 });
 
 app.post('/api/score', (req, res) => {
-  if (!req.session.playerId) {
+  /** @type {any} */
+  const sessionData = req.session;
+  if (!sessionData.playerId) {
     return res.status(401).json({ error: 'Not authenticated' });
   }
 
-  if (!checkRateLimit(req.session.playerId, 10, 60000)) {
+  if (!checkRateLimit(sessionData.playerId, 10, 60000)) {
     return res.status(429).json({ error: 'Too many score submissions. Please wait.' });
   }
 
   const { score, speedLevel, fingerprint, gameDuration, foodEaten, seed, moves, totalFrames, heartbeats } = req.body;
+
+  if (typeof moves === 'string' && moves.length > 50000) {
+    return res.status(400).json({ error: 'Move data too large' });
+  }
+
+  if (typeof heartbeats === 'string' && heartbeats.length > 10000) {
+    return res.status(400).json({ error: 'Heartbeat data too large' });
+  }
 
   if (typeof score !== 'number' || typeof speedLevel !== 'number') {
     return res.status(400).json({ error: 'Invalid score data' });
@@ -605,19 +726,26 @@ app.post('/api/score', (req, res) => {
     return res.status(400).json({ error: 'Invalid score: exceeds maximum' });
   }
 
-  // Validate totalFrames
   if (totalFrames !== undefined) {
     if (typeof totalFrames !== 'number' || totalFrames < 0 || totalFrames > 10000 || !Number.isFinite(totalFrames)) {
       return res.status(400).json({ error: 'Invalid totalFrames value' });
     }
   }
 
+  if (cheaterOps.isKnownCheater(sessionData.playerId)) {
+    const cheatCount = cheaterOps.getCheatCount(sessionData.playerId);
+    console.log(`[WARNING] Known cheater submitting score: ${sessionData.playerId} (${cheatCount} prior offenses)`);
+  }
+
   if (foodEaten) {
     if (foodEaten * 10 !== score) {
-      const player = playerOps.findById(req.session.playerId);
+      const player = playerOps.findById(sessionData.playerId);
+      if (!player) {
+        return res.status(401).json({ error: 'Player not found' });
+      }
       const ipAddress = getClientIP(req);
-      console.log(`[CHEAT DETECTED] Player: ${player.username} (${req.session.playerId}) - Food: ${foodEaten}, Score: ${score} (expected ${foodEaten * 10})`);
-      cheaterOps.record(req.session.playerId, player.username, ipAddress, fingerprint, 'score_mismatch', score, `Score ${score} does not match food eaten ${foodEaten}`);
+      console.log(`[CHEAT DETECTED] Player: ${player.username} (${sessionData.playerId}) - Food: ${foodEaten}, Score: ${score} (expected ${foodEaten * 10})`);
+      cheaterOps.record(sessionData.playerId, player.username, ipAddress, fingerprint, 'score_mismatch', score, `Score ${score} does not match food eaten ${foodEaten}`);
       return res.status(400).json({ error: 'Score does not match food eaten' });
     }
   }
@@ -625,7 +753,10 @@ app.post('/api/score', (req, res) => {
   if (gameDuration && speedLevel > 5) {
     const minDuration = speedLevel * 1.5;
     if (gameDuration < minDuration) {
-      const player = playerOps.findById(req.session.playerId);
+      const player = playerOps.findById(sessionData.playerId);
+      if (!player) {
+        return res.status(401).json({ error: 'Player not found' });
+      }
       const ipAddress = getClientIP(req);
       logCheatDetection(
         player.username,
@@ -636,77 +767,82 @@ app.post('/api/score', (req, res) => {
         `Speed Level: ${speedLevel} | Food: ${foodEaten || 'N/A'}`
       );
       console.log(`[CHEAT DETECTED] Player: ${player.username} - Duration: ${gameDuration}s, Speed: ${speedLevel} (too fast, min: ${minDuration}s)`);
-      cheaterOps.record(req.session.playerId, player.username, ipAddress, fingerprint, 'speed_hack', score, `Game too fast: ${gameDuration}s (min ${minDuration}s)`);
+      cheaterOps.record(sessionData.playerId, player.username, ipAddress, fingerprint, 'speed_hack', score, `Game too fast: ${gameDuration}s (min ${minDuration}s)`);
       return res.status(400).json({ error: 'Game completed too quickly' });
     }
   }
 
-  if (!playerOps.verifyFingerprint(req.session.playerId, fingerprint)) {
+  if (!playerOps.verifyFingerprint(sessionData.playerId, fingerprint)) {
     return res.status(403).json({ error: 'Fingerprint verification failed' });
   }
 
-  const session = activeSessions.get(req.session.playerId);
-  if (!session || session.seed !== seed) {
-    const player = playerOps.findById(req.session.playerId);
+  const gameSession = activeSessions.get(sessionData.playerId);
+  if (!gameSession || gameSession.seed !== seed) {
+    const player = playerOps.findById(sessionData.playerId);
+    if (!player) {
+      return res.status(401).json({ error: 'Player not found' });
+    }
     const ipAddress = getClientIP(req);
     logCheatDetection(
       player.username,
       ipAddress,
       'invalid_session',
       score,
-      session ? 'Seed mismatch' : 'No active session',
-      `Sent seed: ${seed} | Expected seed: ${session?.seed || 'none'}`
+      gameSession ? 'Seed mismatch' : 'No active session',
+      `Sent seed: ${seed} | Expected seed: ${gameSession?.seed || 'none'}`
     );
     console.log(`[CHEAT DETECTED] Player: ${player.username} - Invalid or missing game session`);
-    cheaterOps.record(req.session.playerId, player.username, ipAddress, fingerprint, 'invalid_session', score, 'Invalid or missing game session');
+    cheaterOps.record(sessionData.playerId, player.username, ipAddress, fingerprint, 'invalid_session', score, 'Invalid or missing game session');
     return res.status(400).json({ error: 'Invalid game session' });
   }
 
-  // Allow empty moves only for 0-score games (instant crashes are legitimate)
   if (!moves || typeof moves !== 'string' || moves === '') {
     if (score > 0) {
-      // Score > 0 but no moves = cheating
-      const player = playerOps.findById(req.session.playerId);
+      const player = playerOps.findById(sessionData.playerId);
+      if (!player) {
+        return res.status(401).json({ error: 'Player not found' });
+      }
       const ipAddress = getClientIP(req);
       console.log(`[CHEAT DETECTED] Player: ${player.username} - Missing move history with score ${score}`);
-      cheaterOps.record(req.session.playerId, player.username, ipAddress, fingerprint, 'missing_moves', score, 'Missing move history');
+      cheaterOps.record(sessionData.playerId, player.username, ipAddress, fingerprint, 'missing_moves', score, 'Missing move history');
       return res.status(400).json({ error: 'Move history required' });
     }
     
-    // Score = 0 and no moves = instant crash, allow it (skip validation)
-    activeSessions.delete(req.session.playerId);
+    activeSessions.delete(sessionData.playerId);
     
-    scoreOps.add(req.session.playerId, score, speedLevel);
-    const bestScore = scoreOps.getBestScore(req.session.playerId);
-    const rank = scoreOps.getPlayerRank(req.session.playerId);
+    scoreOps.add(sessionData.playerId, score, speedLevel);
+    const bestScore = scoreOps.getBestScore(sessionData.playerId);
+    const rank = scoreOps.getPlayerRank(sessionData.playerId);
     
     return res.json({ 
       success: true, 
       bestScore,
       rank,
-      isNewBest: false // 0 score is never a new best
+      isNewBest: false
     });
   }
 
-  // Parse moves: format is "direction,frame,timestamp"
-  const parsedMoves = moves.split(';').map(moveStr => {
+  /** @type {Move[]} */
+  const parsedMoves = /** @type {Move[]} */ (moves.split(';').map((/** @type {string} */ moveStr) => {
     const parts = moveStr.split(',').map(Number);
     if (parts.length === 3) {
       return { d: parts[0], f: parts[1], t: parts[2] };
-    } else if (parts.length === 2) {
-      // Backward compatibility: old format without frame numbers
+    } 
+    if (parts.length === 2) {
       return { d: parts[0], f: 0, t: parts[1] };
     }
     return null;
-  }).filter(m => m && !isNaN(m.d) && !isNaN(m.f) && !isNaN(m.t));
+  }).filter((/** @type {Move | null} */ m) => m && !isNaN(m.d) && !isNaN(m.f) && !isNaN(m.t)));
 
-  // Validate heartbeats (timing manipulation detection)
   if (heartbeats && typeof heartbeats === 'string' && heartbeats.length > 0 && score > 100) {
-    const parsedHeartbeats = heartbeats.split(';').map(hb => hb.trim()).filter(hb => hb.length > 0);
+    const parsedHeartbeats = heartbeats.split(';').map((/** @type {string} */ hb) => hb.trim()).filter((/** @type {string} */ hb) => hb.length > 0);
     const heartbeatCheck = validateHeartbeats(parsedHeartbeats, gameDuration, totalFrames);
     
     if (!heartbeatCheck.valid || heartbeatCheck.suspicious) {
-      const player = playerOps.findById(req.session.playerId);
+      const player = playerOps.findById(sessionData.playerId);
+      if (!player) {
+        return res.status(401).json({ error: 'Player not found' });
+      }
       const ipAddress = getClientIP(req);
       
       logCheatDetection(
@@ -715,7 +851,7 @@ app.post('/api/score', (req, res) => {
         'timing_manipulation',
         score,
         'Heartbeat validation failed - possible game speed manipulation',
-        `Issues: ${JSON.stringify(heartbeatCheck.issues)} | Avg ms/frame: ${heartbeatCheck.avgMsPerFrame?.toFixed(2)}`
+        `Issues: ${JSON.stringify(heartbeatCheck.issues || [])} | Avg ms/frame: ${heartbeatCheck.avgMsPerFrame?.toFixed(2)}`
       );
       
       console.log(`\n========== CHEAT DETECTED: TIMING MANIPULATION ==========`);
@@ -724,17 +860,17 @@ app.post('/api/score', (req, res) => {
       console.log(`Heartbeat validation failed`);
       console.log(`Heartbeat count: ${heartbeatCheck.heartbeatCount}`);
       console.log(`Avg ms per frame: ${heartbeatCheck.avgMsPerFrame?.toFixed(2)}`);
-      console.log(`Issues found:`, JSON.stringify(heartbeatCheck.issues, null, 2));
+      console.log(`Issues found:`, JSON.stringify(heartbeatCheck.issues || [], null, 2));
       console.log(`========================================================\n`);
       
       cheaterOps.record(
-        req.session.playerId,
+        sessionData.playerId,
         player.username,
         ipAddress,
         fingerprint,
         'timing_manipulation',
         score,
-        `Heartbeat validation failed: ${heartbeatCheck.issues.length} timing anomalies detected`
+        `Heartbeat validation failed: ${(heartbeatCheck.issues || []).length} timing anomalies detected`
       );
       
       return res.status(400).json({ 
@@ -742,21 +878,25 @@ app.post('/api/score', (req, res) => {
       });
     }
     
-    // Log heartbeat data for high scores (investigation purposes)
     if (score >= 1000) {
-      logGameActivity(
-        playerOps.findById(req.session.playerId).username,
-        score,
-        'HEARTBEAT_DATA',
-        `HB Count: ${heartbeatCheck.heartbeatCount} | Avg ms/frame: ${heartbeatCheck.avgMsPerFrame?.toFixed(2)} | Heartbeats: ${heartbeats.substring(0, 500)}...`
-      );
+      const logPlayer = playerOps.findById(sessionData.playerId);
+      if (logPlayer) {
+        logGameActivity(
+          logPlayer.username,
+          score,
+          'HEARTBEAT_DATA',
+          `HB Count: ${heartbeatCheck.heartbeatCount} | Avg ms/frame: ${heartbeatCheck.avgMsPerFrame?.toFixed(2)} | Heartbeats: ${heartbeats.substring(0, 500)}...`
+        );
+      }
     }
   }
 
-  // Detect pause abuse
   const pauseCheck = detectPauseAbuse(parsedMoves, gameDuration);
   if (pauseCheck.hasPause) {
-    const player = playerOps.findById(req.session.playerId);
+    const player = playerOps.findById(sessionData.playerId);
+    if (!player) {
+      return res.status(401).json({ error: 'Player not found' });
+    }
     const ipAddress = getClientIP(req);
     
     const gapDetails = JSON.stringify(pauseCheck.suspiciousGaps);
@@ -779,7 +919,7 @@ app.post('/api/score', (req, res) => {
     console.log(`=====================================\n`);
     
     cheaterOps.record(
-      req.session.playerId, 
+      sessionData.playerId, 
       player.username, 
       ipAddress, 
       fingerprint, 
@@ -796,20 +936,21 @@ app.post('/api/score', (req, res) => {
   const validation = validateGameReplay(parsedMoves, seed, score, foodEaten, gameDuration, totalFrames);
   
   if (!validation.valid) {
-    const player = playerOps.findById(req.session.playerId);
+    const player = playerOps.findById(sessionData.playerId);
+    if (!player) {
+      return res.status(401).json({ error: 'Player not found' });
+    }
     const ipAddress = getClientIP(req);
     
-    // Log to persistent file
     logCheatDetection(
       player.username,
       ipAddress,
       'replay_fail',
       score,
-      validation.reason,
+      validation.reason || 'Unknown validation error',
       `Food: ${foodEaten} | Duration: ${gameDuration}s | Frames: ${totalFrames} | Summary: ${JSON.stringify(validation.log.summary)}`
     );
     
-    // Comprehensive logging
     console.log(`\n========== CHEAT DETECTION ==========`);
     console.log(`Player: ${player.username} (ID: ${player.id})`);
     console.log(`IP Address: ${ipAddress}`);
@@ -819,10 +960,9 @@ app.post('/api/score', (req, res) => {
     
     if (validation.log.errors.length > 0) {
       console.log(`\n--- Errors ---`);
-      validation.log.errors.forEach(err => console.log(`  - ${err}`));
+      validation.log.errors.forEach((/** @type {string} */ err) => { console.log(`  - ${err}`); });
     }
     
-    // Log last few frames for debugging
     const recentFrames = validation.log.frames.slice(-5);
     if (recentFrames.length > 0) {
       console.log(`\n--- Last 5 Frames ---`);
@@ -831,46 +971,46 @@ app.post('/api/score', (req, res) => {
     
     console.log(`=====================================\n`);
     
-    cheaterOps.record(req.session.playerId, player.username, ipAddress, fingerprint, 'replay_fail', score, validation.reason);
-    return res.status(400).json({ error: 'Game validation failed: ' + validation.reason });
+    cheaterOps.record(sessionData.playerId, player.username, ipAddress, fingerprint, 'replay_fail', score, validation.reason || 'Unknown');
+    return res.status(400).json({ error: `Game validation failed: ${validation.reason}` });
   }
   
-  // AI Bot Detection - Check for bot-like move patterns
   const botCheck = detectBotUsage(parsedMoves, foodEaten, score);
   if (botCheck.isBot) {
-    const player = playerOps.findById(req.session.playerId);
+    const player = playerOps.findById(sessionData.playerId);
+    if (!player) {
+      return res.status(401).json({ error: 'Player not found' });
+    }
     const ipAddress = getClientIP(req);
     
-    // Log to persistent file
     logCheatDetection(
       player.username,
       ipAddress,
       'bot_usage',
       score,
-      botCheck.reason,
+      botCheck.reason || 'Bot detected',
       `Details: ${JSON.stringify(botCheck.details)}`
     );
     
-    // Comprehensive logging
     console.log(`\n========== AI BOT DETECTED ==========`);
     console.log(`Player: ${player.username} (ID: ${player.id})`);
     console.log(`IP Address: ${ipAddress}`);
     console.log(`Score: ${score}`);
     console.log(`Moves: ${parsedMoves.length}`);
     console.log(`Food Eaten: ${foodEaten}`);
-    console.log(`Moves per Food: ${botCheck.movesPerFood.toFixed(2)}`);
+    console.log(`Moves per Food: ${(botCheck.movesPerFood || 0).toFixed(2)}`);
     console.log(`Reason: ${botCheck.reason}`);
     console.log(`Details:`, JSON.stringify(botCheck.details, null, 2));
     console.log(`=====================================\n`);
     
     cheaterOps.record(
-      req.session.playerId,
+      sessionData.playerId,
       player.username,
       ipAddress,
       fingerprint,
       'bot_usage',
       score,
-      botCheck.reason
+      botCheck.reason || 'Bot detected'
     );
     
     return res.status(400).json({ 
@@ -878,24 +1018,25 @@ app.post('/api/score', (req, res) => {
     });
   }
   
-  // Log successful validation for high scores
   if (score >= 100) {
-    const player = playerOps.findById(req.session.playerId);
-    logGameActivity(
-      player.username,
-      score,
-      'VALID',
-      `Food: ${foodEaten} | Duration: ${gameDuration}s | Speed Level: ${speedLevel} | Moves: ${parsedMoves.length} | M/F: ${botCheck.movesPerFood?.toFixed(2) || 'N/A'}`
-    );
-    console.log(`[VALID SCORE] Player: ${player.username} - Score: ${score}, Food: ${foodEaten}, Duration: ${gameDuration}s, M/F: ${botCheck.movesPerFood?.toFixed(2) || 'N/A'}`);
+    const player = playerOps.findById(sessionData.playerId);
+    if (player) {
+      logGameActivity(
+        player.username,
+        score,
+        'VALID',
+        `Food: ${foodEaten} | Duration: ${gameDuration}s | Speed Level: ${speedLevel} | Moves: ${parsedMoves.length} | M/F: ${botCheck.movesPerFood?.toFixed(2) || 'N/A'}`
+      );
+      console.log(`[VALID SCORE] Player: ${player.username} - Score: ${score}, Food: ${foodEaten}, Duration: ${gameDuration}s, M/F: ${botCheck.movesPerFood?.toFixed(2) || 'N/A'}`);
+    }
   }
 
-  activeSessions.delete(req.session.playerId);
+  activeSessions.delete(sessionData.playerId);
 
-  scoreOps.add(req.session.playerId, score, speedLevel);
+  scoreOps.add(sessionData.playerId, score, speedLevel);
   
-  const bestScore = scoreOps.getBestScore(req.session.playerId);
-  const rank = scoreOps.getPlayerRank(req.session.playerId);
+  const bestScore = scoreOps.getBestScore(sessionData.playerId);
+  const rank = scoreOps.getPlayerRank(sessionData.playerId);
   const isNewBest = score === bestScore;
 
   res.json({ 
@@ -907,27 +1048,32 @@ app.post('/api/score', (req, res) => {
 });
 
 app.get('/api/halloffame', (req, res) => {
-  const limit = parseInt(req.query.limit) || 10;
+  const limit = parseInt(/** @type {string} */ (req.query.limit) || '10', 10);
   const hallOfFame = scoreOps.getHallOfFame(limit);
   res.json({ hallOfFame });
 });
 
 app.get('/api/hallofshame', (req, res) => {
-  const limit = parseInt(req.query.limit) || 50;
+  const limit = parseInt(/** @type {string} */ (req.query.limit) || '50', 10);
   const hallOfShame = cheaterOps.getHallOfShame(limit);
   res.json({ hallOfShame });
 });
 
 app.get('/api/player/stats', (req, res) => {
-  if (!req.session.playerId) {
+  /** @type {any} */
+  const sessionData = req.session;
+  if (!sessionData.playerId) {
     return res.status(401).json({ error: 'Not authenticated' });
   }
 
-  const player = playerOps.findById(req.session.playerId);
-  const bestScore = scoreOps.getBestScore(req.session.playerId);
-  const totalGames = scoreOps.getTotalGames(req.session.playerId);
-  const history = scoreOps.getPlayerHistory(req.session.playerId, 10);
-  const rank = scoreOps.getPlayerRank(req.session.playerId);
+  const player = playerOps.findById(sessionData.playerId);
+  if (!player) {
+    return res.status(401).json({ error: 'Player not found' });
+  }
+  const bestScore = scoreOps.getBestScore(sessionData.playerId);
+  const totalGames = scoreOps.getTotalGames(sessionData.playerId);
+  const history = scoreOps.getPlayerHistory(sessionData.playerId, 10);
+  const rank = scoreOps.getPlayerRank(sessionData.playerId);
 
   res.json({
     player: {
@@ -946,7 +1092,7 @@ app.get('/api/stats', (req, res) => {
 });
 
 app.post('/api/logout', (req, res) => {
-  req.session.destroy();
+  req.session.destroy(() => undefined);
   res.json({ success: true });
 });
 
@@ -954,6 +1100,7 @@ app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
+/** @returns {Promise<void>} */
 async function startServer() {
   try {
     await initializeDatabase();

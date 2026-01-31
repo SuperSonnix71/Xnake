@@ -409,6 +409,29 @@ body {
     border-color: rgba(0, 255, 136, 0.3);
 }
 
+.hall-of-fame-item.known-cheater {
+    border-color: rgba(255, 165, 0, 0.5);
+    background: rgba(255, 165, 0, 0.05);
+}
+
+.hall-of-fame-item.top-three.known-cheater {
+    background: linear-gradient(135deg, rgba(0, 255, 136, 0.1) 0%, rgba(255, 165, 0, 0.1) 100%);
+    border-color: rgba(255, 165, 0, 0.5);
+}
+
+.known-cheater-badge {
+    display: inline-block;
+    background: rgba(255, 165, 0, 0.3);
+    padding: 2px 8px;
+    border-radius: 5px;
+    font-size: 0.65em;
+    font-weight: 600;
+    color: #ffa500;
+    margin-left: 8px;
+    border: 1px solid rgba(255, 165, 0, 0.5);
+    vertical-align: middle;
+}
+
 .hall-rank {
     font-size: 1.5em;
     font-weight: 700;
@@ -512,6 +535,32 @@ body {
 
 .developer-credit:hover {
     color: rgba(255, 255, 255, 0.6);
+}
+
+.developer-links {
+    display: flex;
+    justify-content: center;
+    gap: 15px;
+    margin-top: 8px;
+}
+
+.dev-link {
+    color: rgba(255, 255, 255, 0.3);
+    transition: all 0.3s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 5px;
+}
+
+.dev-link:hover {
+    color: rgba(255, 255, 255, 0.7);
+    transform: translateY(-2px);
+}
+
+.dev-link svg {
+    width: 16px;
+    height: 16px;
 }
 
 /* Hall of Shame */

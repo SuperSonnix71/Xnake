@@ -15,7 +15,7 @@ class BrowserFingerprint {
         const components = [];
 
         // Screen resolution
-        components.push(screen.width + 'x' + screen.height);
+        components.push(`${screen.width  }x${  screen.height}`);
         components.push(screen.colorDepth);
 
         // Timezone
@@ -57,11 +57,10 @@ class BrowserFingerprint {
                     components.push(gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL));
                 }
             }
-        } catch (e) {
+        } catch (_e) {
             components.push('webgl-error');
         }
 
-        // Audio fingerprint
         try {
             const audioContext = new (window.AudioContext || window.webkitAudioContext)();
             const oscillator = audioContext.createOscillator();
@@ -75,14 +74,14 @@ class BrowserFingerprint {
             scriptProcessor.connect(gainNode);
             gainNode.connect(audioContext.destination);
 
-            scriptProcessor.onaudioprocess = function() {};
+            scriptProcessor.onaudioprocess = function() { return undefined; };
             oscillator.start(0);
             
             components.push(audioContext.sampleRate.toString());
             
             oscillator.stop();
             audioContext.close();
-        } catch (e) {
+        } catch (_e) {
             components.push('audio-error');
         }
 

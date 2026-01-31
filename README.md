@@ -1,304 +1,240 @@
-# 🐍 XNAKE - Modern Snake Game with Persistent Leaderboard
+# XNAKE - Modern Snake Game with Anti-Cheat System
 
-A beautiful, modern Snake game built with Node.js, Express, and HTML5 Canvas. Features player registration, persistent scores, Hall of Fame leaderboard, and browser fingerprinting to prevent cheating!
+A modern Snake game built with Node.js, Express, and HTML5 Canvas. Features player registration, persistent scores, Hall of Fame leaderboard, and a comprehensive anti-cheat system to ensure fair play.
 
-## Features
+## Overview
 
-### Game Features
-- 🎨 Modern black background with stunning gradient effects
-- ✨ Smooth animations with glowing snake and pulsing food
-- 🎮 Keyboard controls (Arrow Keys or WASD)
-- ⏸️ Pause functionality (Space bar)
-- 🚀 Progressive speed increase as you score
-- 📱 Responsive design for different screen sizes
+XNAKE is a browser-based Snake game with:
+- Smooth animations with glowing effects
+- Keyboard controls (Arrow Keys or WASD)
+- Pause functionality (Space bar)
+- Progressive speed increase as you score
+- Persistent player accounts and scores
+- Global leaderboard (Hall of Fame)
+- Hall of Shame for caught cheaters
 
-### Player & Scoring Features
-- 👤 **Player Registration** - First-time players register with a username
-- 🔒 **Browser Fingerprinting** - Device-based identity prevents easy cheating
-- 💾 **Persistent Scores** - All scores saved to SQLite database
-- 🏆 **Hall of Fame** - Top 10 players leaderboard
-- 📊 **Personal Stats** - Track your best score and ranking
-- 🎯 **Rank System** - See your global ranking after each game
-- 🎉 **New Best Indicator** - Celebration when you beat your personal best
-- 🔐 **Session Management** - Automatic login for returning players
+## Anti-Cheat System
 
-### Anti-Cheat System
-- **Browser Fingerprinting**: Combines screen resolution, timezone, platform, canvas rendering, WebGL, and audio context
-- **Session Cookies**: Persistent 1-year cookies to track players
-- **Fingerprint Verification**: All score submissions verified against registered fingerprint
-- **Username Lock**: One username per device fingerprint
+XNAKE includes a comprehensive server-side anti-cheat system that validates all game submissions:
 
-## Quick Start
+### Detection Methods
 
-### Option 1: Run with Docker (Recommended)
+| Method | Description |
+|--------|-------------|
+| Browser Fingerprinting | Unique device identification using screen, canvas, WebGL, and audio fingerprints |
+| Session Seed Validation | Server-generated seeds ensure games are started legitimately |
+| Full Game Replay | Server replays all moves to verify the claimed score matches |
+| Score/Food Matching | Validates that score equals food eaten times 10 |
+| Speed Hack Detection | Detects games completed impossibly fast |
+| Pause Abuse Detection | Flags suspicious gaps between moves (>10 seconds) |
+| Heartbeat Timing | Cross-validates game timing with performance timestamps |
+| Bot Detection | Identifies AI/bot patterns based on moves-per-food ratio |
+| Rate Limiting | Prevents spam submissions (10 requests/minute) |
+| Input Size Validation | Rejects oversized move/heartbeat data |
 
-1. **Build the Docker image:**
+### Cheat Logging
+
+All detected cheating attempts are:
+- Logged to `cheat_detection.log` with full details
+- Recorded in the database with player, IP, cheat type, and reason
+- Displayed in the Hall of Shame (`/api/hallofshame`)
+
+## API Reference
+
+### Authentication
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/register` | POST | Register a new player with username and fingerprint |
+| `/api/verify` | POST | Verify session with fingerprint, auto-login returning players |
+| `/api/session` | GET | Check current session status |
+| `/api/logout` | POST | Logout current player |
+
+### Game
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/game/start` | POST | Start a new game session, returns server seed |
+| `/api/score` | POST | Submit game score with moves, heartbeats, and validation data |
+
+### Leaderboards and Stats
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/halloffame` | GET | Get top scores (query: `?limit=10`) |
+| `/api/hallofshame` | GET | Get caught cheaters (query: `?limit=50`) |
+| `/api/player/stats` | GET | Get current player statistics |
+| `/api/stats` | GET | Get global game statistics |
+
+## Installation
+
+### Prerequisites
+
+- Node.js 18+ (for local installation)
+- Docker (for containerized deployment)
+
+### Local Installation
+
+1. Clone the repository:
    ```bash
-   docker build -t xnake-game .
+   git clone https://github.com/SuperSonnix71/Xnake.git
+   cd Xnake
    ```
 
-2. **Run the container with persistent storage:**
-   ```bash
-   docker run -d -p 3000:3000 -v $(pwd):/app --name xnake xnake-game
-   ```
-
-3. **Open your browser:**
-   Navigate to `http://localhost:3000`
-
-### Option 2: Run Locally with Node.js
-
-1. **Install dependencies:**
+2. Install dependencies:
    ```bash
    npm install
    ```
 
-2. **Start the server:**
+3. Start the server:
    ```bash
    npm start
    ```
 
-3. **Open your browser:**
-   Navigate to `http://localhost:3000`
+4. Open your browser and navigate to:
+   ```
+   http://localhost:3333
+   ```
 
-## How to Play
+### Development Mode
 
-### First Time Players
-1. Enter a username (3-20 characters, letters, numbers, and underscores only)
-2. Your device will be registered with your username
-3. Start playing!
-
-### Returning Players
-- You'll be automatically logged in if you're using the same browser/device
-- Your best score and ranking will be displayed
-
-### Controls
-
-| Key | Action |
-|-----|--------|
-| ↑ / W | Move Up |
-| ↓ / S | Move Down |
-| ← / A | Move Left |
-| → / D | Move Right |
-| Space | Pause/Unpause |
-
-### Gameplay
-- Eat the glowing food to grow and score points (+10 per food)
-- Avoid hitting the walls or yourself
-- Game speed increases as your score goes up
-- Try to reach the top of the Hall of Fame!
-
-## API Endpoints
-
-The game includes a RESTful API for all player and score operations:
-
-- `POST /api/register` - Register a new player
-- `POST /api/verify` - Verify player session with fingerprint
-- `GET /api/session` - Check current session status
-- `POST /api/score` - Submit a score (requires authentication)
-- `GET /api/halloffame` - Get top scores
-- `GET /api/player/stats` - Get player statistics
-- `GET /api/stats` - Get global game statistics
-- `POST /api/logout` - Logout current player
-
-## Docker Commands
-
-**Build the image:**
-```bash
-docker build -t xnake-game .
-```
-
-**Run with persistent storage:**
-```bash
-docker run -d -p 3000:3000 -v $(pwd):/app --name xnake xnake-game
-```
-
-**Run without persistent storage:**
-```bash
-docker run -d -p 3000:3000 --name xnake xnake-game
-```
-
-**Stop the container:**
-```bash
-docker stop xnake
-```
-
-**Start the container:**
-```bash
-docker start xnake
-```
-
-**Remove the container:**
-```bash
-docker rm xnake
-```
-
-**View logs:**
-```bash
-docker logs xnake
-```
-
-**Access container shell:**
-```bash
-docker exec -it xnake sh
-```
-
-## Technology Stack
-
-### Backend
-- **Node.js** - JavaScript runtime
-- **Express** - Web framework
-- **express-session** - Session management
-- **sql.js** - SQLite database (pure JavaScript, no native dependencies)
-- **uuid** - Unique ID generation
-
-### Frontend
-- **HTML5 Canvas** - Game rendering
-- **Vanilla JavaScript** - Game logic and browser fingerprinting
-- **CSS3** - Modern styling with animations
-
-### Database
-- **SQLite** - Lightweight embedded database
-- **Tables**: 
-  - `players` - User accounts with fingerprints
-  - `scores` - Game scores with timestamps
-- **Indexes**: Optimized queries for rankings and leaderboards
-
-## Database Schema
-
-### Players Table
-```sql
-CREATE TABLE players (
-    id TEXT PRIMARY KEY,
-    username TEXT UNIQUE NOT NULL,
-    fingerprint TEXT NOT NULL,
-    created_at INTEGER NOT NULL,
-    last_seen INTEGER NOT NULL
-)
-```
-
-### Scores Table
-```sql
-CREATE TABLE scores (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    player_id TEXT NOT NULL,
-    score INTEGER NOT NULL,
-    speed_level INTEGER NOT NULL,
-    played_at INTEGER NOT NULL,
-    FOREIGN KEY (player_id) REFERENCES players(id)
-)
-```
-
-## Browser Fingerprinting
-
-The game uses multiple browser attributes to create a unique fingerprint:
-
-1. **Screen Properties**: Resolution, color depth
-2. **Timezone**: Timezone name and offset
-3. **Language**: Browser language preferences
-4. **Platform**: Operating system and CPU cores
-5. **User Agent**: Browser identification
-6. **Canvas Fingerprint**: Unique rendering signature
-7. **WebGL**: Graphics card information
-8. **Audio Context**: Audio processing characteristics
-9. **Touch Support**: Touchscreen detection
-
-All combined and hashed using SHA-256 to create a unique device identifier.
-
-## Project Structure
-
-```
-xnake/
-├── public/
-│   ├── index.html          # Game interface
-│   ├── game.js             # Game logic
-│   ├── fingerprint.js      # Browser fingerprinting
-│   └── style.css           # Styles and animations
-├── server.js               # Express server with API
-├── database.js             # SQLite database operations
-├── package.json            # Node.js dependencies
-├── Dockerfile              # Docker configuration
-├── .dockerignore           # Docker ignore file
-├── xnake.db               # SQLite database file (auto-created)
-└── README.md              # This file
-```
-
-## Game Mechanics
-
-### Speed System
-- **Initial Speed**: 150ms per move (slower start for easier gameplay)
-- **Speed Increase**: 3ms faster for each food eaten
-- **Minimum Speed**: 50ms per move (maximum difficulty)
-
-### Scoring System
-- **Points per Food**: 10 points
-- **Best Score**: Tracked per player
-- **Global Ranking**: Compared against all players' best scores
-- **Hall of Fame**: Top 10 all-time best scores
-
-## Security Considerations
-
-### What's Prevented
-- ✅ Multiple accounts per device (fingerprint lock)
-- ✅ Score submission without authentication
-- ✅ Session hijacking (fingerprint verification)
-- ✅ Easy username switching
-
-### What's NOT Prevented
-- ❌ Determined cheaters using VPN + incognito mode
-- ❌ Code modification (client-side game logic)
-- ❌ Multiple physical devices
-
-The anti-cheat system is designed to prevent **casual cheating** and make it annoying enough to deter most players.
-
-## Development
-
-**Development mode with auto-restart:**
+Run with auto-restart on file changes:
 ```bash
 npm run dev
 ```
 
-**Kill existing server:**
+### Docker Deployment
+
+Use the included deploy script for a complete Docker deployment:
+
 ```bash
-lsof -ti:3000 | xargs kill -9
+chmod +x deploy.sh
+./deploy.sh
 ```
 
-## Environment Variables
+The deploy script will:
+- Stop and remove any existing container
+- Remove the old Docker image
+- Build a fresh Docker image
+- Start the container with persistent storage
+- Display access URLs when complete
 
-- `PORT` - Server port (default: 3000)
-- `SESSION_SECRET` - Session encryption key (change in production!)
-- `NODE_ENV` - Environment (development/production)
+The game will be available at `http://localhost:3333`
 
-## Production Deployment
+### Manual Docker Commands
+
+Build the image:
+```bash
+docker build -t xnake-game .
+```
+
+Run with persistent storage:
+```bash
+docker run -d -p 3333:3000 -v $(pwd):/app --name xnake xnake-game
+```
+
+Run without persistent storage:
+```bash
+docker run -d -p 3333:3000 --name xnake xnake-game
+```
+
+Container management:
+```bash
+docker stop xnake      # Stop the container
+docker start xnake     # Start the container
+docker restart xnake   # Restart the container
+docker rm xnake        # Remove the container
+docker logs xnake      # View logs
+```
+
+## Configuration
+
+### Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `PORT` | 3333 | Server port |
+| `SESSION_SECRET` | (hardcoded) | Session encryption key (change in production) |
+
+### Production Considerations
 
 1. Set a secure `SESSION_SECRET` environment variable
 2. Enable HTTPS and set `secure: true` in session cookie config
 3. Use a reverse proxy (nginx) for SSL termination
 4. Regular database backups of `xnake.db`
-5. Consider using a proper database for high traffic (PostgreSQL)
 
-## Troubleshooting
+## Project Structure
 
-**Database locked error:**
-- The database is being written to. Wait a moment and try again.
+```
+snake/
+├── public/
+│   ├── index.html          # Game interface
+│   ├── game.js             # Game logic and rendering
+│   ├── fingerprint.js      # Browser fingerprinting
+│   └── style.css           # Styles and animations
+├── server.js               # Express server with API and anti-cheat
+├── database.js             # SQLite database operations
+├── package.json            # Node.js dependencies
+├── Dockerfile              # Docker configuration
+├── deploy.sh               # Docker build and deploy script
+├── eslint.config.js        # ESLint configuration
+├── tsconfig.json           # TypeScript configuration (for type checking)
+├── xnake.db                # SQLite database file (auto-created)
+├── game_activity.log       # Valid game submissions log
+└── cheat_detection.log     # Cheat detection log
+```
 
-**Fingerprint mismatch:**
-- Browser extensions or privacy tools may affect fingerprinting
-- Clearing cookies will require re-registration
+## How to Play
 
-**Can't register username:**
-- Username already taken by another player
-- Device already registered with different username
+### Controls
+
+| Key | Action |
+|-----|--------|
+| Arrow Up / W | Move Up |
+| Arrow Down / S | Move Down |
+| Arrow Left / A | Move Left |
+| Arrow Right / D | Move Right |
+| Space | Pause/Unpause |
+
+### Gameplay
+
+- Eat the glowing food to grow and score points (+10 per food)
+- Avoid hitting the walls or yourself
+- Game speed increases as your score goes up
+- Try to reach the top of the Hall of Fame
+
+### Speed System
+
+- Initial Speed: 150ms per move
+- Speed Increase: 3ms faster for each food eaten
+- Minimum Speed: 50ms per move (maximum difficulty)
+
+## Technology Stack
+
+### Backend
+- Node.js with Express
+- express-session for session management
+- sql.js (pure JavaScript SQLite)
+- uuid for unique ID generation
+
+### Frontend
+- HTML5 Canvas for game rendering
+- Vanilla JavaScript for game logic
+- CSS3 for styling and animations
+
+### Code Quality
+- ESLint with security and Node.js plugins
+- TypeScript for type checking (via JSDoc annotations)
+
+## Author
+
+Developed by Sonny Mir
+
+## Bug Reports
+
+Found a bug or have a feature request? Please open an issue at:
+https://github.com/SuperSonnix71/Xnake/issues
 
 ## License
 
-MIT License - Feel free to use and modify!
-
-## Credits
-
-Created with ❤️ for snake game enthusiasts everywhere!
-
----
-
-## Enjoy the Game! 🎮🐍
-
-Try to beat the high score and claim your spot in the Hall of Fame!
+MIT License

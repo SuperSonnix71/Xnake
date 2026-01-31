@@ -21,8 +21,8 @@
         }
     };
     
-    function seededRandom(seed) {
-        const x = Math.sin(seed++) * 10000;
+    function seededRandom(seedValue) {
+        const x = Math.sin(seedValue) * 10000;
         return x - Math.floor(x);
     }
     
@@ -132,7 +132,7 @@
                 errorEl.textContent = data.error || 'Registration failed';
                 errorEl.classList.remove('hidden');
             }
-        } catch (error) {
+        } catch (_error) {
             errorEl.textContent = 'Network error. Please try again.';
             errorEl.classList.remove('hidden');
         }
@@ -173,19 +173,19 @@
     }
     
     function recordHeartbeat() {
-        if (isPaused || !isGameRunning) return;
+        if (isPaused || !isGameRunning) {return;}
         
         heartbeats.push({
             t: Date.now() - gameStartTime,           // Real elapsed time (ms)
             p: performance.now() - performanceStartTime, // Performance time (ms)
             f: frameCount,                            // Current frame number
             s: currentSpeed,                          // Current game speed (ms per frame)
-            score: score                              // Current score (for debugging)
+            score                              // Current score (for debugging)
         });
     }
     
     async function startGame() {
-        if (!playerData) return;
+        if (!playerData) {return;}
         
         try {
             const response = await fetch('/api/game/start', {
@@ -225,7 +225,7 @@
     }
     
     function handleKeyPress(e) {
-        if (!isGameRunning) return;
+        if (!isGameRunning) {return;}
         
         if (e.code === 'Space') {
             e.preventDefault();
@@ -238,7 +238,7 @@
             return;
         }
         
-        if (isPaused) return;
+        if (isPaused) {return;}
         
         const directionMap = {
             'ArrowUp': { x: 0, y: -1 },
@@ -261,7 +261,7 @@
     }
     
     function update() {
-        if (isPaused) return;
+        if (isPaused) {return;}
         
         frameCount++;
         
@@ -323,6 +323,10 @@
         document.getElementById('speed').textContent = speedLevel;
     }
     
+    function isPositionOnSnake(pos, snakeBody) {
+        return snakeBody.some(segment => segment.x === pos.x && segment.y === pos.y);
+    }
+    
     function spawnFood() {
         let newFood;
         let attempts = 0;
@@ -335,7 +339,7 @@
                 y: Math.floor(seededRandom(gameSeed + foodEatenCount + attempts + 1) * CONFIG.gridSize)
             };
             attempts++;
-        } while (snake.some(segment => segment.x === newFood.x && segment.y === newFood.y) && attempts < maxAttempts);
+        } while (isPositionOnSnake(newFood, snake) && attempts < maxAttempts);
         
         food = newFood;
     }
@@ -487,7 +491,7 @@
                     
                     document.getElementById('gameOverRank').textContent = `#${data.rank}`;
                 } else if (data.error) {
-                    alert('Error: ' + data.error);
+                    alert(`Error: ${  data.error}`);
                 }
             } catch (error) {
                 console.error('Failed to submit score:', error);
