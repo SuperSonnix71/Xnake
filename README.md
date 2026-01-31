@@ -58,7 +58,7 @@ XNAKE includes a comprehensive server-side anti-cheat system that validates all 
 
 ### Neural Network Detection
 
-A TensorFlow.js neural network provides a second layer of cheat detection by analyzing behavioral patterns that rule-based systems might miss. The network automatically improves over time by retraining on real gameplay data.
+A TensorFlow.js neural network provides a second layer of cheat detection by analyzing behavioral patterns that rule-based systems might miss. The network automatically trains on first server startup and improves over time by retraining on real gameplay data.
 
 #### How It Works
 
@@ -193,20 +193,16 @@ npm run dev
 
 ### Neural Network Training
 
-Initialize the neural network versioning system (first time only):
-```bash
-npm run ml:init
-```
+The neural network trains automatically:
+- **On first startup**: Trains an initial model using synthetic data
+- **On cheat detection**: Retrains with real gameplay data (5-minute debounce)
+- **No manual intervention required**
 
-Train/retrain the cheat detection model:
+Manual training is also available if needed:
 ```bash
 npm run ml:train              # Quick training (50 epochs)
 npm run ml:train:full         # Full training (100 epochs, 200+ samples)
-```
-
-Or trigger training via the API:
-```bash
-curl -X POST http://localhost:3333/api/ml/train
+curl -X POST http://localhost:3333/api/ml/train  # Via API
 ```
 
 ### Docker Deployment

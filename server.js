@@ -7,6 +7,7 @@ const { initializeDatabase, playerOps, scoreOps, statsOps, cheaterOps, mlOps, cl
 const { extractFeatures, featuresToArray, normalizeFeatures, createTimeSeriesFeatures } = require('./ml/features');
 const { predict, loadModel, isModelAvailable } = require('./ml/model');
 const { onCheatDetected, getTrainingStatus, triggerTraining } = require('./ml/worker');
+const { train: trainModel } = require('./ml/train');
 const { processAndLogEdgeCase, getEdgeCases, getEdgeCaseStats } = require('./ml/edgecases');
 const { getActiveVersion, getAllVersions, getTrainingLogs } = require('./ml/versioning');
 
@@ -1255,6 +1256,20 @@ app.get('/', (req, res) => {
 async function startServer() {
   try {
     await initializeDatabase();
+    
+    if (!isModelAvailable()) {
+      console.log('[ML] No trained model found, training initial model with synthetic data...');
+      try {
+        const result = await trainModel({
+          epochs: 50,
+          minSamples: 100,
+          augmentWithSynthetic: true
+        });
+        console.log(`[ML] Initial model trained: accuracy=${(result.accuracy * 100).toFixed(1)}%, F1=${((result.f1Score || 0) * 100).toFixed(1)}%`);
+      } catch (err) {
+        console.error('[ML] Failed to train initial model:', err);
+      }
+    }
     
     const server = app.listen(PORT, '0.0.0.0', () => {
       console.log(`🐍 Xnake Game Server is running!`);

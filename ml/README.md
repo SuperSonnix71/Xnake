@@ -47,6 +47,10 @@ Game Submission
 
 The neural network learns from real gameplay data over time. As more games are played and cheats are detected by the rule-based system, the neural network becomes more accurate.
 
+### Automatic Initialization
+
+On first server startup, if no trained model exists, the system automatically trains an initial model using synthetic data. This ensures the neural network is ready immediately without manual intervention.
+
 ---
 
 ## Architecture
