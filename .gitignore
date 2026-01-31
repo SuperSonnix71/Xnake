@@ -10,6 +10,9 @@ logs/
 cheat_detection.log
 game_activity.log
 
+# ML models (regenerable via npm run ml:train)
+ml/models/
+
 # Environment
 .env
 .env.local
