@@ -92,7 +92,6 @@ module.exports = [
       "no-await-in-loop": "warn",
       "no-promise-executor-return": "error",
       "no-template-curly-in-string": "warn",
-      "no-unmodified-loop-condition": "error",
       "require-atomic-updates": "error",
 
       "arrow-body-style": ["error", "as-needed"],

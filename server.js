@@ -3,7 +3,9 @@ const express = require('express');
 const session = require('express-session');
 const path = require('path');
 const fs = require('fs');
-const { initializeDatabase, playerOps, scoreOps, statsOps, cheaterOps, closeDatabase } = require('./database');
+const { initializeDatabase, playerOps, scoreOps, statsOps, cheaterOps, mlOps, closeDatabase } = require('./database');
+const { extractFeatures, featuresToArray, normalizeFeatures, createTimeSeriesFeatures } = require('./ml/features');
+const { predict, loadModel, isModelAvailable } = require('./ml/model');
 
 /** @typedef {import('express').Request} Request */
 /** @typedef {import('express').Response} Response */
@@ -123,6 +125,35 @@ function checkRateLimit(playerId, maxRequests = 10, windowMs = 60000) {
   recentRequests.push(now);
   rateLimit.set(playerId, recentRequests);
   return true;
+}
+
+
+/**
+ * @param {string} playerId
+ * @param {number} score
+ * @param {boolean} isCheat
+ * @param {string|null} cheatType
+ * @param {Move[]} parsedMoves
+ * @param {any[]} parsedHeartbeats
+ * @param {number} foodEaten
+ * @param {number} gameDuration
+ * @returns {void}
+ */
+function saveMLTrainingData(playerId, score, isCheat, cheatType, parsedMoves, parsedHeartbeats, foodEaten, gameDuration) {
+  try {
+    const features = extractFeatures(parsedMoves, parsedHeartbeats, score, foodEaten, gameDuration);
+    mlOps.saveTrainingData(
+      playerId,
+      score,
+      isCheat,
+      cheatType,
+      features,
+      parsedMoves.slice(0, 500),
+      parsedHeartbeats.slice(0, 100)
+    );
+  } catch (err) {
+    console.error('[ML] Error saving training data:', err);
+  }
 }
 
 /**
@@ -693,7 +724,7 @@ app.post('/api/verify', (req, res) => {
   res.json({ verified: false, reason: 'not_registered' });
 });
 
-app.post('/api/score', (req, res) => {
+app.post('/api/score', async (req, res) => {
   /** @type {any} */
   const sessionData = req.session;
   if (!sessionData.playerId) {
@@ -834,9 +865,21 @@ app.post('/api/score', (req, res) => {
     return null;
   }).filter((/** @type {Move | null} */ m) => m && !isNaN(m.d) && !isNaN(m.f) && !isNaN(m.t)));
 
+  /** @type {any[]} */
+  let parsedHeartbeats = [];
+  if (heartbeats && typeof heartbeats === 'string' && heartbeats.length > 0) {
+    parsedHeartbeats = heartbeats.split(';').map((/** @type {string} */ hb) => {
+      const parts = hb.trim().split(',');
+      if (parts.length >= 4) {
+        return { t: Number(parts[0]), p: Number(parts[1]), f: Number(parts[2]), s: Number(parts[3]), score: parts[4] ? Number(parts[4]) : undefined };
+      }
+      return null;
+    }).filter((/** @type {any} */ h) => h !== null);
+  }
+
   if (heartbeats && typeof heartbeats === 'string' && heartbeats.length > 0 && score > 100) {
-    const parsedHeartbeats = heartbeats.split(';').map((/** @type {string} */ hb) => hb.trim()).filter((/** @type {string} */ hb) => hb.length > 0);
-    const heartbeatCheck = validateHeartbeats(parsedHeartbeats, gameDuration, totalFrames);
+    const rawHeartbeats = heartbeats.split(';').map((/** @type {string} */ hb) => hb.trim()).filter((/** @type {string} */ hb) => hb.length > 0);
+    const heartbeatCheck = validateHeartbeats(rawHeartbeats, gameDuration, totalFrames);
     
     if (!heartbeatCheck.valid || heartbeatCheck.suspicious) {
       const player = playerOps.findById(sessionData.playerId);
@@ -872,6 +915,8 @@ app.post('/api/score', (req, res) => {
         score,
         `Heartbeat validation failed: ${(heartbeatCheck.issues || []).length} timing anomalies detected`
       );
+      
+      saveMLTrainingData(sessionData.playerId, score, true, 'timing_manipulation', parsedMoves, parsedHeartbeats, foodEaten, gameDuration);
       
       return res.status(400).json({ 
         error: 'Game timing validation failed. Please ensure you are playing at normal speed without modifications.' 
@@ -928,6 +973,8 @@ app.post('/api/score', (req, res) => {
       `Paused game detected: ${pauseCheck.gapCount} gaps totaling ${pauseCheck.totalSuspiciousTime}s`
     );
     
+    saveMLTrainingData(sessionData.playerId, score, true, 'pause_abuse', parsedMoves, parsedHeartbeats, foodEaten, gameDuration);
+    
     return res.status(400).json({ 
       error: 'Game pausing detected. Play without pausing to submit scores.' 
     });
@@ -972,6 +1019,7 @@ app.post('/api/score', (req, res) => {
     console.log(`=====================================\n`);
     
     cheaterOps.record(sessionData.playerId, player.username, ipAddress, fingerprint, 'replay_fail', score, validation.reason || 'Unknown');
+    saveMLTrainingData(sessionData.playerId, score, true, 'replay_fail', parsedMoves, parsedHeartbeats, foodEaten, gameDuration);
     return res.status(400).json({ error: `Game validation failed: ${validation.reason}` });
   }
   
@@ -1013,11 +1061,46 @@ app.post('/api/score', (req, res) => {
       botCheck.reason || 'Bot detected'
     );
     
+    saveMLTrainingData(sessionData.playerId, score, true, 'bot_usage', parsedMoves, parsedHeartbeats, foodEaten, gameDuration);
+    
     return res.status(400).json({ 
       error: 'AI/Bot usage detected. Human players cannot achieve this score with these move patterns.' 
     });
   }
   
+  let mlPrediction = 0;
+  let mlSuspicious = false;
+  
+  if (isModelAvailable() && score >= 50) {
+    try {
+      const loaded = await loadModel();
+      if (loaded) {
+        const features = extractFeatures(parsedMoves, parsedHeartbeats, score, foodEaten, gameDuration);
+        const featureArray = featuresToArray(features);
+        const normalized = normalizeFeatures(featureArray, /** @type {any} */ (loaded.stats));
+        const timeSeries = createTimeSeriesFeatures(parsedMoves, parsedHeartbeats);
+        
+        mlPrediction = await predict(normalized, timeSeries);
+        mlSuspicious = mlPrediction > 0.7;
+        
+        if (mlSuspicious) {
+          const player = playerOps.findById(sessionData.playerId);
+          if (player) {
+            console.log(`[ML WARNING] Player: ${player.username} - Score: ${score} - ML Cheat Probability: ${(mlPrediction * 100).toFixed(1)}%`);
+            logGameActivity(
+              player.username,
+              score,
+              'ML_SUSPICIOUS',
+              `Cheat probability: ${(mlPrediction * 100).toFixed(1)}% | Food: ${foodEaten} | Duration: ${gameDuration}s`
+            );
+          }
+        }
+      }
+    } catch (err) {
+      console.error('[ML] Prediction error:', err);
+    }
+  }
+
   if (score >= 100) {
     const player = playerOps.findById(sessionData.playerId);
     if (player) {
@@ -1034,6 +1117,7 @@ app.post('/api/score', (req, res) => {
   activeSessions.delete(sessionData.playerId);
 
   scoreOps.add(sessionData.playerId, score, speedLevel);
+  saveMLTrainingData(sessionData.playerId, score, false, null, parsedMoves, parsedHeartbeats, foodEaten, gameDuration);
   
   const bestScore = scoreOps.getBestScore(sessionData.playerId);
   const rank = scoreOps.getPlayerRank(sessionData.playerId);

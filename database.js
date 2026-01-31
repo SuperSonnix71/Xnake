@@ -81,11 +81,28 @@ async function initializeDatabase() {
     )
   `);
 
+  getDb().run(`
+    CREATE TABLE IF NOT EXISTS ml_training_data (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      player_id TEXT NOT NULL,
+      score INTEGER NOT NULL,
+      is_cheat INTEGER NOT NULL,
+      cheat_type TEXT,
+      features TEXT NOT NULL,
+      raw_moves TEXT,
+      raw_heartbeats TEXT,
+      created_at INTEGER NOT NULL,
+      FOREIGN KEY (player_id) REFERENCES players(id)
+    )
+  `);
+
   getDb().run(`CREATE INDEX IF NOT EXISTS idx_scores_player ON scores(player_id)`);
   getDb().run(`CREATE INDEX IF NOT EXISTS idx_scores_score ON scores(score DESC)`);
   getDb().run(`CREATE INDEX IF NOT EXISTS idx_players_fingerprint ON players(fingerprint)`);
   getDb().run(`CREATE INDEX IF NOT EXISTS idx_cheaters_caught_at ON cheaters(caught_at DESC)`);
   getDb().run(`CREATE INDEX IF NOT EXISTS idx_cheaters_player ON cheaters(player_id)`);
+  getDb().run(`CREATE INDEX IF NOT EXISTS idx_ml_training_is_cheat ON ml_training_data(is_cheat)`);
+  getDb().run(`CREATE INDEX IF NOT EXISTS idx_ml_training_created ON ml_training_data(created_at DESC)`);
 
   saveDatabase();
 }
@@ -432,11 +449,116 @@ const cheaterOps = {
   isKnownCheater: (playerId) => cheaterOps.getCheatCount(playerId) > 0
 };
 
+
+/**
+ * @typedef {Object} MLTrainingRecord
+ * @property {number} id
+ * @property {string} player_id
+ * @property {number} score
+ * @property {number} is_cheat
+ * @property {string|null} cheat_type
+ * @property {Object} features
+ * @property {number} created_at
+ */
+
+const mlOps = {
+  /**
+   * @param {string} playerId
+   * @param {number} score
+   * @param {boolean} isCheat
+   * @param {string|null} cheatType
+   * @param {Object} features
+   * @param {any[]|null} rawMoves
+   * @param {any[]|null} rawHeartbeats
+   * @returns {void}
+   */
+  saveTrainingData: (playerId, score, isCheat, cheatType, features, rawMoves = null, rawHeartbeats = null) => {
+    const now = Date.now();
+    getDb().run(
+      `INSERT INTO ml_training_data (player_id, score, is_cheat, cheat_type, features, raw_moves, raw_heartbeats, created_at) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        playerId,
+        score,
+        isCheat ? 1 : 0,
+        cheatType,
+        JSON.stringify(features),
+        rawMoves ? JSON.stringify(rawMoves) : null,
+        rawHeartbeats ? JSON.stringify(rawHeartbeats) : null,
+        now
+      ]
+    );
+    saveDatabase();
+  },
+
+  /**
+   * @param {number} [limit=10000]
+   * @returns {MLTrainingRecord[]}
+   */
+  getTrainingData: (limit = 10000) => {
+    const result = getDb().exec(
+      `SELECT id, player_id, score, is_cheat, cheat_type, features, created_at 
+       FROM ml_training_data ORDER BY created_at DESC LIMIT ?`,
+      [limit]
+    );
+    if (result.length === 0) { return []; }
+    return result[0].values.map((/** @type {any[]} */ row) => ({
+      id: /** @type {number} */ (row[0]),
+      player_id: /** @type {string} */ (row[1]),
+      score: /** @type {number} */ (row[2]),
+      is_cheat: /** @type {number} */ (row[3]),
+      cheat_type: /** @type {string|null} */ (row[4]),
+      features: JSON.parse(/** @type {string} */ (row[5])),
+      created_at: /** @type {number} */ (row[6])
+    }));
+  },
+
+  /**
+   * @returns {{total: number, cheats: number, legitimate: number}}
+   */
+  getTrainingStats: () => {
+    const result = getDb().exec(`
+      SELECT 
+        COUNT(*) as total,
+        SUM(CASE WHEN is_cheat = 1 THEN 1 ELSE 0 END) as cheats,
+        SUM(CASE WHEN is_cheat = 0 THEN 1 ELSE 0 END) as legitimate
+      FROM ml_training_data
+    `);
+    if (result.length === 0 || result[0].values.length === 0) {
+      return { total: 0, cheats: 0, legitimate: 0 };
+    }
+    const row = result[0].values[0];
+    return {
+      total: /** @type {number} */ (row[0]) || 0,
+      cheats: /** @type {number} */ (row[1]) || 0,
+      legitimate: /** @type {number} */ (row[2]) || 0
+    };
+  },
+
+  /**
+   * @param {number} id
+   * @returns {{raw_moves: any[]|null, raw_heartbeats: any[]|null}|null}
+   */
+  getRawData: (id) => {
+    const result = getDb().exec(
+      'SELECT raw_moves, raw_heartbeats FROM ml_training_data WHERE id = ?',
+      [id]
+    );
+    if (result.length === 0 || result[0].values.length === 0) { return null; }
+    const row = result[0].values[0];
+    return {
+      raw_moves: row[0] ? JSON.parse(/** @type {string} */ (row[0])) : null,
+      raw_heartbeats: row[1] ? JSON.parse(/** @type {string} */ (row[1])) : null
+    };
+  }
+};
+
 module.exports = {
   initializeDatabase,
   playerOps,
   scoreOps,
   statsOps,
+  mlOps,
   cheaterOps,
   closeDatabase
 };

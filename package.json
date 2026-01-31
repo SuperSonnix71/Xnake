@@ -5,7 +5,9 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "nodemon server.js"
+    "dev": "nodemon server.js",
+    "ml:train": "node ml/train.js",
+    "ml:train:full": "node ml/train.js --epochs=100 --min-samples=200"
   },
   "keywords": [
     "snake",
@@ -18,6 +20,7 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
+    "@tensorflow/tfjs": "^4.22.0",
     "express": "^4.18.2",
     "express-session": "^1.17.3",
     "sql.js": "^1.10.3",
