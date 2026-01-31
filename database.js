@@ -10,7 +10,7 @@ const { v4: uuidv4 } = require('uuid');
 /** @typedef {{ username: string, ip_address: string, cheat_type: string, attempted_score: number, reason: string, caught_at: number, offense_count: number }} HallOfShameEntry */
 /** @typedef {{ total_players: number, total_games: number, highest_score: number, average_score: number }} GlobalStats */
 
-const dbPath = path.join(__dirname, 'xnake.db');
+const dbPath = process.env.DB_PATH || path.join(__dirname, 'xnake.db');
 
 /** @type {any} */
 let db = null;

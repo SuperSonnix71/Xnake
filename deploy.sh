@@ -68,13 +68,17 @@ else
     exit 1
 fi
 
-# Run the container
+# Create data directory for persistent storage
+mkdir -p "$(pwd)/data"
+
+# Run the container with specific volume mounts (not entire /app)
 echo "🚀 Starting container: ${CONTAINER_NAME}"
 docker run -d \
     --name ${CONTAINER_NAME} \
     -p ${PORT}:${INTERNAL_PORT} \
     --restart unless-stopped \
-    -v "$(pwd)":/app \
+    -v "$(pwd)/data:/app/data" \
+    -v "$(pwd)/ml/models:/app/ml/models" \
     ${IMAGE_NAME}
 
 if [ $? -eq 0 ]; then
@@ -108,8 +112,10 @@ if docker ps --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
     echo "   Restart:      docker restart ${CONTAINER_NAME}"
     echo "   Remove:       docker rm -f ${CONTAINER_NAME}"
     echo ""
-    echo "🎯 Database file: xnake.db (persisted in current directory)"
-    echo ""
+echo "🎯 Persistent data:"
+echo "   Database:  ./data/xnake.db"
+echo "   ML Models: ./ml/models/"
+echo ""
 else
     echo "❌ Container failed to start properly"
     echo "📋 Check logs with: docker logs ${CONTAINER_NAME}"

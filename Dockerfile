@@ -1,6 +1,9 @@
 # Use Node.js LTS version
 FROM node:18-alpine
 
+# Install build dependencies for TensorFlow.js
+RUN apk add --no-cache python3 make g++
+
 # Set working directory
 WORKDIR /app
 
@@ -8,7 +11,7 @@ WORKDIR /app
 COPY package*.json ./
 
 # Install dependencies
-RUN npm install --production
+RUN npm ci
 
 # Copy application files
 COPY server.js ./
@@ -25,6 +28,7 @@ EXPOSE 3000
 # Set environment variables
 ENV PORT=3000
 ENV NODE_ENV=production
+ENV DB_PATH=/app/data/xnake.db
 
 # Create volumes for persistent storage
 # - /app/data: Database storage
