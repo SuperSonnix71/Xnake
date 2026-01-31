@@ -181,7 +181,8 @@ function generateSyntheticLegitimate(count) {
  * @param {number} [options.batchSize=32]
  * @param {number} [options.minSamples=100]
  * @param {boolean} [options.augmentWithSynthetic=true]
- * @returns {Promise<{accuracy: number, loss: number, samples: number}>}
+ * @param {boolean} [options.returnDetailedMetrics=false]
+ * @returns {Promise<{accuracy: number, loss: number, samples: number, precision?: number, recall?: number, f1Score?: number, trainingSamples?: number, validationSamples?: number, trainingFeatures?: number[][], validationFeatures?: number[][]}>}
  */
 async function train(options = {}) {
   const {
@@ -189,7 +190,8 @@ async function train(options = {}) {
     epochs = 50,
     batchSize = 32,
     minSamples = 100,
-    augmentWithSynthetic = true
+    augmentWithSynthetic = true,
+    returnDetailedMetrics = false
   } = options;
   
   await initializeDatabase();
@@ -238,7 +240,7 @@ async function train(options = {}) {
     return { accuracy: 0, loss: 1, samples: allFeatures.length };
   }
   
-  const featureArrays = allFeatures.map((/** @type {Object} */ f) => featuresToArray(f));
+  const featureArrays = allFeatures.map((/** @type {any} */ f) => featuresToArray(f));
   const normStats = computeNormalizationStats(featureArrays);
   const normalizedFeatures = featureArrays.map((/** @type {number[]} */ f) => normalizeFeatures(f, normStats));
   
@@ -274,10 +276,28 @@ async function train(options = {}) {
     }
   });
   
-  const finalLoss = history.history.val_loss[history.history.val_loss.length - 1];
-  const finalAcc = history.history.val_acc[history.history.val_acc.length - 1];
+  const finalLoss = /** @type {number} */ (history.history.val_loss[history.history.val_loss.length - 1]);
+  const finalAcc = /** @type {number} */ (history.history.val_acc[history.history.val_acc.length - 1]);
   
-  console.log(`[ML Training] Training complete. Final validation accuracy: ${(finalAcc * 100).toFixed(2)}%`);
+  const predTensor = /** @type {tf.Tensor} */ (model.predict(xValTensor));
+  const predictions = await predTensor.data();
+  predTensor.dispose();
+  
+  let tp = 0, fp = 0, fn = 0;
+  for (let i = 0; i < yVal.length; i++) {
+    const pred = predictions[i] >= 0.5 ? 1 : 0;
+    const actual = yVal[i];
+    if (pred === 1 && actual === 1) { tp++; }
+    else if (pred === 1 && actual === 0) { fp++; }
+    else if (pred === 0 && actual === 0) { /* tn - not needed for metrics */ }
+    else { fn++; }
+  }
+  
+  const precision = tp + fp > 0 ? tp / (tp + fp) : 0;
+  const recall = tp + fn > 0 ? tp / (tp + fn) : 0;
+  const f1Score = precision + recall > 0 ? 2 * (precision * recall) / (precision + recall) : 0;
+  
+  console.log(`[ML Training] Training complete. Accuracy: ${(finalAcc * 100).toFixed(2)}%, Precision: ${(precision * 100).toFixed(2)}%, Recall: ${(recall * 100).toFixed(2)}%, F1: ${(f1Score * 100).toFixed(2)}%`);
   
   await saveModel(model, normStats);
   console.log(`[ML Training] Model saved successfully`);
@@ -289,11 +309,26 @@ async function train(options = {}) {
   
   await closeDatabase();
   
-  return {
+  const result = {
     accuracy: finalAcc,
     loss: finalLoss,
-    samples: allFeatures.length
+    precision,
+    recall,
+    f1Score,
+    samples: allFeatures.length,
+    trainingSamples: xTrain.length,
+    validationSamples: xVal.length
   };
+  
+  if (returnDetailedMetrics) {
+    return {
+      ...result,
+      trainingFeatures: xTrain,
+      validationFeatures: xVal
+    };
+  }
+  
+  return result;
 }
 
 if (require.main === module) {

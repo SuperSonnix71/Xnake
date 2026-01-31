@@ -6,6 +6,9 @@ const fs = require('fs');
 const { initializeDatabase, playerOps, scoreOps, statsOps, cheaterOps, mlOps, closeDatabase } = require('./database');
 const { extractFeatures, featuresToArray, normalizeFeatures, createTimeSeriesFeatures } = require('./ml/features');
 const { predict, loadModel, isModelAvailable } = require('./ml/model');
+const { onCheatDetected, getTrainingStatus } = require('./ml/worker');
+const { processAndLogEdgeCase, getEdgeCases, getEdgeCaseStats } = require('./ml/edgecases');
+const { getActiveVersion, getAllVersions, getTrainingLogs } = require('./ml/versioning');
 
 /** @typedef {import('express').Request} Request */
 /** @typedef {import('express').Response} Response */
@@ -917,6 +920,7 @@ app.post('/api/score', async (req, res) => {
       );
       
       saveMLTrainingData(sessionData.playerId, score, true, 'timing_manipulation', parsedMoves, parsedHeartbeats, foodEaten, gameDuration);
+      onCheatDetected('timing_manipulation', { score, gameDuration, foodEaten });
       
       return res.status(400).json({ 
         error: 'Game timing validation failed. Please ensure you are playing at normal speed without modifications.' 
@@ -974,6 +978,7 @@ app.post('/api/score', async (req, res) => {
     );
     
     saveMLTrainingData(sessionData.playerId, score, true, 'pause_abuse', parsedMoves, parsedHeartbeats, foodEaten, gameDuration);
+    onCheatDetected('pause_abuse', { score, gameDuration, foodEaten });
     
     return res.status(400).json({ 
       error: 'Game pausing detected. Play without pausing to submit scores.' 
@@ -1020,6 +1025,7 @@ app.post('/api/score', async (req, res) => {
     
     cheaterOps.record(sessionData.playerId, player.username, ipAddress, fingerprint, 'replay_fail', score, validation.reason || 'Unknown');
     saveMLTrainingData(sessionData.playerId, score, true, 'replay_fail', parsedMoves, parsedHeartbeats, foodEaten, gameDuration);
+    onCheatDetected('replay_fail', { score, gameDuration, foodEaten });
     return res.status(400).json({ error: `Game validation failed: ${validation.reason}` });
   }
   
@@ -1062,6 +1068,7 @@ app.post('/api/score', async (req, res) => {
     );
     
     saveMLTrainingData(sessionData.playerId, score, true, 'bot_usage', parsedMoves, parsedHeartbeats, foodEaten, gameDuration);
+    onCheatDetected('bot_usage', { score, gameDuration, foodEaten });
     
     return res.status(400).json({ 
       error: 'AI/Bot usage detected. Human players cannot achieve this score with these move patterns.' 
@@ -1070,12 +1077,13 @@ app.post('/api/score', async (req, res) => {
   
   let mlPrediction = 0;
   let mlSuspicious = false;
+  let features = null;
   
   if (isModelAvailable() && score >= 50) {
     try {
       const loaded = await loadModel();
       if (loaded) {
-        const features = extractFeatures(parsedMoves, parsedHeartbeats, score, foodEaten, gameDuration);
+        features = extractFeatures(parsedMoves, parsedHeartbeats, score, foodEaten, gameDuration);
         const featureArray = featuresToArray(features);
         const normalized = normalizeFeatures(featureArray, /** @type {any} */ (loaded.stats));
         const timeSeries = createTimeSeriesFeatures(parsedMoves, parsedHeartbeats);
@@ -1083,7 +1091,27 @@ app.post('/api/score', async (req, res) => {
         mlPrediction = await predict(normalized, timeSeries);
         mlSuspicious = mlPrediction > 0.7;
         
-        if (mlSuspicious) {
+        const edgeResult = processAndLogEdgeCase(
+          sessionData.playerId,
+          score,
+          false,
+          null,
+          mlPrediction,
+          features
+        );
+        
+        if (edgeResult.shouldFlag) {
+          const player = playerOps.findById(sessionData.playerId);
+          if (player) {
+            console.log(`[ML EDGE CASE] Player: ${player.username} - Score: ${score} - ML: ${(mlPrediction * 100).toFixed(1)}% - Type: ${edgeResult.edgeType}`);
+            logGameActivity(
+              player.username,
+              score,
+              'ML_FLAGGED',
+              `Edge case: ${edgeResult.edgeType} | Cheat probability: ${(mlPrediction * 100).toFixed(1)}% | Food: ${foodEaten}`
+            );
+          }
+        } else if (mlSuspicious) {
           const player = playerOps.findById(sessionData.playerId);
           if (player) {
             console.log(`[ML WARNING] Player: ${player.username} - Score: ${score} - ML Cheat Probability: ${(mlPrediction * 100).toFixed(1)}%`);
@@ -1173,6 +1201,40 @@ app.get('/api/player/stats', (req, res) => {
 app.get('/api/stats', (req, res) => {
   const stats = statsOps.getGlobalStats();
   res.json({ stats });
+});
+
+app.get('/api/ml/status', (req, res) => {
+  const trainingStatus = getTrainingStatus();
+  const activeVersion = getActiveVersion();
+  const edgeCaseStats = getEdgeCaseStats();
+  
+  res.json({
+    trainingStatus,
+    activeModel: activeVersion ? {
+      version: activeVersion.version,
+      createdAt: activeVersion.createdAt,
+      metrics: activeVersion.metrics
+    } : null,
+    edgeCases: edgeCaseStats
+  });
+});
+
+app.get('/api/ml/versions', (_req, res) => {
+  const versions = getAllVersions();
+  res.json({ versions });
+});
+
+app.get('/api/ml/training-logs', (req, res) => {
+  const limit = parseInt(/** @type {string} */ (req.query.limit) || '50', 10);
+  const logs = getTrainingLogs(limit);
+  res.json({ logs });
+});
+
+app.get('/api/ml/edge-cases', (req, res) => {
+  const limit = parseInt(/** @type {string} */ (req.query.limit) || '50', 10);
+  const cases = getEdgeCases(limit);
+  const stats = getEdgeCaseStats();
+  res.json({ cases, stats });
 });
 
 app.post('/api/logout', (req, res) => {
