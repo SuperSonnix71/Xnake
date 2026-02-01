@@ -431,12 +431,14 @@ async function runTests() {
     for (let i = 0; i < 3; i++) {
       const legit = generateLegitimateGame(['beginner', 'medium', 'expert'][i]);
       const features = extractFeatures(legit.moves, legit.heartbeats, legit.score, legit.foodEaten, legit.gameDuration);
+      // eslint-disable-next-line no-await-in-loop
       legitProbs.push(await predict(featuresToArray(features)));
     }
     
     const cheats = [generateSpeedHackCheat(), generateBotCheat(), generatePauseAbuseCheat(), generateTimingManipulationCheat()];
     for (const cheat of cheats) {
       const features = extractFeatures(cheat.moves, cheat.heartbeats, cheat.score, cheat.foodEaten, cheat.gameDuration);
+      // eslint-disable-next-line no-await-in-loop
       cheatProbs.push(await predict(featuresToArray(features)));
     }
     

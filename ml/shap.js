@@ -66,6 +66,7 @@ async function kernelShap(model, instance, backgroundData, numSamples = 100) {
       return featureMeans[i];
     });
     const predTensor = model.predict(tf.tensor2d([maskedInstance]));
+    // eslint-disable-next-line no-await-in-loop
     const coalitionPred = (await /** @type {tf.Tensor} */ (predTensor).data())[0];
     /** @type {tf.Tensor} */ (predTensor).dispose();
     
@@ -74,6 +75,7 @@ async function kernelShap(model, instance, backgroundData, numSamples = 100) {
         const withoutI = [...maskedInstance];
         withoutI[i] = featureMeans[i];
         const withoutTensor = model.predict(tf.tensor2d([withoutI]));
+        // eslint-disable-next-line no-await-in-loop
         const withoutPred = (await /** @type {tf.Tensor} */ (withoutTensor).data())[0];
         /** @type {tf.Tensor} */ (withoutTensor).dispose();
         
@@ -148,6 +150,7 @@ async function computeGlobalFeatureImportance(model, testData, backgroundData, n
   const samplesToExplain = testData.slice(0, Math.min(20, testData.length));
   
   for (const instance of samplesToExplain) {
+    // eslint-disable-next-line no-await-in-loop
     const explanation = await kernelShap(model, instance, backgroundData, numSamples);
     for (const [name, value] of Object.entries(explanation.featureImportance)) {
       if (allShapValues[name]) {

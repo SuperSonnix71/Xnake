@@ -1199,13 +1199,13 @@ app.post('/api/score', async (req, res) => {
 });
 
 app.get('/api/halloffame', (req, res) => {
-  const limit = parseInt(/** @type {string} */ (req.query.limit) || '10', 10);
+  const limit = Math.min(100, Math.max(1, parseInt(/** @type {string} */ (req.query.limit) || '10', 10)));
   const hallOfFame = scoreOps.getHallOfFame(limit);
   res.json({ hallOfFame });
 });
 
 app.get('/api/hallofshame', (req, res) => {
-  const limit = parseInt(/** @type {string} */ (req.query.limit) || '50', 10);
+  const limit = Math.min(100, Math.max(1, parseInt(/** @type {string} */ (req.query.limit) || '50', 10)));
   const hallOfShame = cheaterOps.getHallOfShame(limit);
   res.json({ hallOfShame });
 });
@@ -1264,13 +1264,13 @@ app.get('/api/ml/versions', (_req, res) => {
 });
 
 app.get('/api/ml/training-logs', (req, res) => {
-  const limit = parseInt(/** @type {string} */ (req.query.limit) || '50', 10);
+  const limit = Math.min(100, Math.max(1, parseInt(/** @type {string} */ (req.query.limit) || '50', 10)));
   const logs = getTrainingLogs(limit);
   res.json({ logs });
 });
 
 app.get('/api/ml/edge-cases', (req, res) => {
-  const limit = parseInt(/** @type {string} */ (req.query.limit) || '50', 10);
+  const limit = Math.min(1000, Math.max(1, parseInt(/** @type {string} */ (req.query.limit) || '50', 10)));
   const cases = getEdgeCases(limit);
   const stats = getEdgeCaseStats();
   res.json({ cases, stats });
