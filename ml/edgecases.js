@@ -152,7 +152,13 @@ function getEdgeCaseStats() {
 }
 
 /**
- * @param {'trust_rules'|'trust_ml'|'conservative'} strategy
+ * Classification strategies:
+ * - trust_rules: Use rule-based detection as ground truth
+ * - trust_ml: Trust ML when confident (>70% or <30%), treat middle as uncertain
+ * - conservative: Only use cases where both rules and ML agree
+ * - hybrid: Trust rules OR high-confidence ML (>85%), best for catching missed cheats
+ * 
+ * @param {'trust_rules'|'trust_ml'|'conservative'|'hybrid'} strategy
  * @returns {{ legitimate: EdgeCase[], cheats: EdgeCase[], uncertain: EdgeCase[] }}
  */
 function classifyEdgeCases(strategy = 'conservative') {
@@ -184,6 +190,14 @@ function classifyEdgeCases(strategy = 'conservative') {
       } else {
         legitimate.push(c);
       }
+    } else if (strategy === 'hybrid') {
+      if (isRulesCheat || (c.mlProbability > 0.85)) {
+        cheats.push(c);
+      } else if (c.mlProbability < 0.15 || (!isRulesCheat && c.mlProbability < ML_THRESHOLD_LOW)) {
+        legitimate.push(c);
+      } else {
+        uncertain.push(c);
+      }
     } else {
       if (isRulesCheat && isMlCheat) {
         cheats.push(c);
@@ -199,10 +213,10 @@ function classifyEdgeCases(strategy = 'conservative') {
 }
 
 /**
- * @param {'trust_rules'|'trust_ml'|'conservative'} strategy
+ * @param {'trust_rules'|'trust_ml'|'conservative'|'hybrid'} strategy
  * @returns {{ samples: Array<{features: Object, isCheat: boolean, source: string}>, stats: Object }}
  */
-function convertEdgeCasesToTrainingData(strategy = 'trust_rules') {
+function convertEdgeCasesToTrainingData(strategy = 'hybrid') {
   const classified = classifyEdgeCases(strategy);
   
   const samples = [];

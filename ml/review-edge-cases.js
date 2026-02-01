@@ -28,7 +28,7 @@ Object.entries(byType).forEach(([type, count]) => {
 
 console.log('\n=== Training Data Conversion Stats ===\n');
 
-['trust_rules', 'trust_ml', 'conservative'].forEach(strategy => {
+['trust_rules', 'trust_ml', 'conservative', 'hybrid'].forEach(strategy => {
   const result = convertEdgeCasesToTrainingData(strategy);
   console.log(`Strategy: ${strategy}`);
   console.log(`  Usable for training: ${result.stats.usableForTraining}`);

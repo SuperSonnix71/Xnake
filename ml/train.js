@@ -214,7 +214,7 @@ async function train(options = {}) {
     allLabels.push(record.is_cheat);
   });
   
-  const edgeCaseData = /** @type {any} */ (convertEdgeCasesToTrainingData('trust_rules'));
+  const edgeCaseData = /** @type {any} */ (convertEdgeCasesToTrainingData('hybrid'));
   if (edgeCaseData.samples.length > 0) {
     console.log(`[ML Training] Adding ${edgeCaseData.stats.usableForTraining} edge cases (${edgeCaseData.stats.legitimate} legitimate, ${edgeCaseData.stats.cheats} cheats, ${edgeCaseData.stats.uncertain} uncertain)`);
     edgeCaseData.samples.forEach((/** @type {any} */ sample) => {
