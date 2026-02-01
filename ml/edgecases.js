@@ -151,11 +151,98 @@ function getEdgeCaseStats() {
   };
 }
 
+/**
+ * @param {'trust_rules'|'trust_ml'|'conservative'} strategy
+ * @returns {{ legitimate: EdgeCase[], cheats: EdgeCase[], uncertain: EdgeCase[] }}
+ */
+function classifyEdgeCases(strategy = 'conservative') {
+  const cases = getEdgeCases(10000);
+  
+  /** @type {EdgeCase[]} */
+  const legitimate = [];
+  /** @type {EdgeCase[]} */
+  const cheats = [];
+  /** @type {EdgeCase[]} */
+  const uncertain = [];
+  
+  for (const c of cases) {
+    const isRulesCheat = c.ruleResult === 'cheat';
+    const isMlCheat = c.mlProbability > ML_THRESHOLD_HIGH;
+    const isMlUncertain = c.mlProbability >= ML_THRESHOLD_LOW && c.mlProbability <= ML_THRESHOLD_HIGH;
+    
+    if (strategy === 'trust_rules') {
+      if (isRulesCheat) {
+        cheats.push(c);
+      } else {
+        legitimate.push(c);
+      }
+    } else if (strategy === 'trust_ml') {
+      if (isMlCheat) {
+        cheats.push(c);
+      } else if (isMlUncertain) {
+        uncertain.push(c);
+      } else {
+        legitimate.push(c);
+      }
+    } else {
+      if (isRulesCheat && isMlCheat) {
+        cheats.push(c);
+      } else if (!isRulesCheat && !isMlCheat && !isMlUncertain) {
+        legitimate.push(c);
+      } else {
+        uncertain.push(c);
+      }
+    }
+  }
+  
+  return { legitimate, cheats, uncertain };
+}
+
+/**
+ * @param {'trust_rules'|'trust_ml'|'conservative'} strategy
+ * @returns {{ samples: Array<{features: Object, isCheat: boolean, source: string}>, stats: Object }}
+ */
+function convertEdgeCasesToTrainingData(strategy = 'trust_rules') {
+  const classified = classifyEdgeCases(strategy);
+  
+  const samples = [];
+  
+  for (const c of classified.legitimate) {
+    samples.push({
+      features: c.features,
+      isCheat: false,
+      source: `edge_case_${c.edgeType}`
+    });
+  }
+  
+  for (const c of classified.cheats) {
+    samples.push({
+      features: c.features,
+      isCheat: true,
+      source: `edge_case_${c.edgeType}`
+    });
+  }
+  
+  return {
+    samples,
+    stats: {
+      totalEdgeCases: classified.legitimate.length + classified.cheats.length + classified.uncertain.length,
+      legitimate: classified.legitimate.length,
+      cheats: classified.cheats.length,
+      uncertain: classified.uncertain.length,
+      usableForTraining: samples.length,
+      strategy
+    }
+  };
+}
+
 module.exports = {
   detectEdgeCase,
   processAndLogEdgeCase,
   getEdgeCases,
   getEdgeCaseStats,
+  classifyEdgeCases,
+  convertEdgeCasesToTrainingData,
   ML_THRESHOLD_HIGH,
   ML_THRESHOLD_LOW
 };

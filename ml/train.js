@@ -2,6 +2,7 @@ const tf = require('@tensorflow/tfjs');
 const { initializeDatabase, mlOps, closeDatabase } = require('../database');
 const { extractFeatures, featuresToArray, computeNormalizationStats, normalizeFeatures } = require('./features');
 const { createSimpleModel, saveModel } = require('./model');
+const { convertEdgeCasesToTrainingData } = require('./edgecases');
 
 /**
  * @param {any[]} array
@@ -213,7 +214,16 @@ async function train(options = {}) {
     allLabels.push(record.is_cheat);
   });
   
-  if (augmentWithSynthetic && stats.total < minSamples) {
+  const edgeCaseData = /** @type {any} */ (convertEdgeCasesToTrainingData('trust_rules'));
+  if (edgeCaseData.samples.length > 0) {
+    console.log(`[ML Training] Adding ${edgeCaseData.stats.usableForTraining} edge cases (${edgeCaseData.stats.legitimate} legitimate, ${edgeCaseData.stats.cheats} cheats, ${edgeCaseData.stats.uncertain} uncertain)`);
+    edgeCaseData.samples.forEach((/** @type {any} */ sample) => {
+      allFeatures.push(sample.features);
+      allLabels.push(sample.isCheat ? 1 : 0);
+    });
+  }
+  
+  if (augmentWithSynthetic && (stats.total + edgeCaseData.samples.length) < minSamples) {
     const neededSamples = minSamples - stats.total;
     const neededCheats = Math.max(0, Math.ceil(neededSamples / 2) - stats.cheats);
     const neededLegit = Math.max(0, Math.ceil(neededSamples / 2) - stats.legitimate);

@@ -9,7 +9,8 @@
     "test": "node test/ml-anticheat.test.js",
     "ml:train": "node ml/train.js",
     "ml:train:full": "node ml/train.js --epochs=100 --min-samples=200",
-    "ml:init": "node scripts/init-ml-versioning.js"
+    "ml:init": "node scripts/init-ml-versioning.js",
+    "ml:review-edges": "node ml/review-edge-cases.js"
   },
   "keywords": [
     "snake",
