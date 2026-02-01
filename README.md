@@ -5,14 +5,13 @@
 <h1 align="center">XNAKE</h1>
 
 <p align="center">
-  <strong>Modern Snake Game with Anti-Cheat System</strong>
+  <strong>Modern Snake Game with ML Anti-Cheat System</strong>
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-1.0.0-00ff00?style=flat-square" alt="Version">
+  <img src="https://img.shields.io/badge/version-1.1.0-00ff00?style=flat-square" alt="Version">
   <img src="https://img.shields.io/badge/license-MIT-blue?style=flat-square" alt="License">
   <img src="https://img.shields.io/badge/node-18%2B-339933?style=flat-square&logo=node.js&logoColor=white" alt="Node.js">
-  <img src="https://img.shields.io/badge/platform-linux%20%7C%20macos%20%7C%20windows-lightgrey?style=flat-square" alt="Platform">
   <img src="https://img.shields.io/badge/docker-ready-2496ED?style=flat-square&logo=docker&logoColor=white" alt="Docker">
 </p>
 
@@ -24,286 +23,122 @@
 
 ---
 
-A modern Snake game built with Node.js, Express, and HTML5 Canvas. Features player registration, persistent scores, Hall of Fame leaderboard, and a comprehensive anti-cheat system to ensure fair play.
+A modern browser-based Snake game with player registration, persistent scores, global leaderboards, and a comprehensive anti-cheat system powered by machine learning.
 
-## Overview
+## Features
 
-XNAKE is a browser-based Snake game with:
 - Smooth animations with glowing effects
 - Keyboard controls (Arrow Keys or WASD)
 - Pause functionality (Space bar)
-- Progressive speed increase as you score
+- Progressive speed increase
 - Persistent player accounts and scores
-- Global leaderboard (Hall of Fame)
+- Hall of Fame leaderboard
 - Hall of Shame for caught cheaters
+- Dual-layer anti-cheat system (rule-based + neural network)
 
 ## Anti-Cheat System
 
-XNAKE includes a comprehensive server-side anti-cheat system that validates all game submissions using both rule-based detection and a neural network.
+XNAKE uses a hybrid anti-cheat system combining rule-based detection with a self-improving neural network.
 
 ### Rule-Based Detection
 
-| Method | Description |
-|--------|-------------|
-| Browser Fingerprinting | Unique device identification using screen, canvas, WebGL, and audio fingerprints |
-| Session Seed Validation | Server-generated seeds ensure games are started legitimately |
-| Full Game Replay | Server replays all moves to verify the claimed score matches |
-| Score/Food Matching | Validates that score equals food eaten times 10 |
-| Speed Hack Detection | Detects games completed impossibly fast |
-| Pause Abuse Detection | Flags suspicious gaps between moves (>10 seconds) |
-| Heartbeat Timing | Cross-validates game timing with performance timestamps |
-| Bot Detection | Identifies AI/bot patterns based on moves-per-food ratio |
-| Rate Limiting | Prevents spam submissions (10 requests/minute) |
-| Input Size Validation | Rejects oversized move/heartbeat data |
+- Browser fingerprinting
+- Session seed validation
+- Full game replay verification
+- Speed hack detection
+- Pause abuse detection
+- Bot pattern detection
+- Rate limiting
 
 ### Neural Network Detection
 
-A TensorFlow.js neural network provides a second layer of cheat detection by analyzing behavioral patterns that rule-based systems might miss. The network automatically trains on first server startup and improves over time by retraining on real gameplay data.
+A TensorFlow.js neural network analyzes 12 behavioral features to detect cheating patterns that rule-based systems might miss.
 
-#### How It Works
+**Key Features:**
+- Automatic training on first startup
+- Shadow mode (logs suspicions without blocking)
+- Periodic retraining on edge cases
+- Model versioning with automatic rollback
+- SHAP explainability for predictions
 
-1. **Feature Extraction** - 12 behavioral features are computed from raw game data:
-   - `avg_time_between_moves` - Mean time between player inputs
-   - `move_time_variance` - Consistency of input timing
-   - `moves_per_food` - Efficiency ratio (bots often have unnaturally optimal ratios)
-   - `direction_entropy` - Randomness of direction changes
-   - `heartbeat_consistency` - Regularity of client heartbeats
-   - `score_rate` - Points earned per second
-   - `frame_timing_deviation` - Drift between reported frames and elapsed time
-   - `pause_gap_count` - Number of suspicious pauses
-   - `speed_progression` - How game speed increased over time
-   - `movement_burst_rate` - Frequency of rapid input bursts
-   - `performance_time_drift` - Difference between performance.now() and Date.now()
-   - `avg_speed_per_food` - Average game speed when collecting food
+**How It Works:**
+1. Server collects edge cases during normal operation (ML/rules disagreements)
+2. Scheduler checks every 30 minutes for accumulated edge cases
+3. When 10+ new edge cases accumulate, automatic retraining triggers
+4. Training uses real data + edge cases + synthetic augmentation
+5. New model activates only if it performs better than current model
+6. Minimum 2-hour cooldown between retraining cycles
 
-2. **Neural Network Architecture** - A 3-layer fully connected network:
-   - **Input Layer**: 12 behavioral features (normalized using stored mean/std statistics)
-   - **Hidden Layer 1**: 32 neurons with ReLU activation + dropout
-   - **Hidden Layer 2**: 16 neurons with ReLU activation + dropout
-   - **Output Layer**: 1 neuron with sigmoid activation (0 = legitimate, 1 = cheater)
+**Model Architecture:**
+- Input: 12 normalized behavioral features
+- Hidden Layer 1: 32 neurons (ReLU + dropout)
+- Hidden Layer 2: 16 neurons (ReLU + dropout)
+- Output: 1 neuron (sigmoid activation, 0-1 suspicion score)
 
-3. **Shadow Mode** - The neural network currently runs in shadow mode:
-   - Analyzes all game submissions
-   - Logs suspicion scores but doesn't block players
-   - Flags edge cases where the neural network disagrees with rules for review
-
-4. **Continuous Learning** - The neural network improves over time:
-   - Every legitimate game and caught cheat is stored as training data
-   - The model automatically retrains when new cheats are detected (5-min debounce)
-   - New models are only activated if they perform better than the current one
-   - The more games played, the more accurate the detection becomes
-   - SHAP feature importance is computed after each training run
-
-#### Model Versioning
-
-All trained models are versioned with full metrics:
-- Accuracy, precision, recall, and F1 score
-- Training sample counts
-- Automatic rollback if a new model underperforms
-
-#### Explainability (SHAP)
-
-The system uses Kernel SHAP to explain individual predictions:
-- Shows which features contributed most to a suspicion score
-- Helps identify new cheat patterns
-- Enables debugging of false positives
-
-### Cheat Logging
-
-All detected cheating attempts are:
-- Logged to `cheat_detection.log` with full details
-- Recorded in the database with player, IP, cheat type, and reason
-- Displayed in the Hall of Shame (`/api/hallofshame`)
-
-Edge cases (neural network/rules disagreements) are logged to `ml/models/edge_cases.log` for review.
-
-## API Reference
-
-### Authentication
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/register` | POST | Register a new player with username and fingerprint |
-| `/api/verify` | POST | Verify session with fingerprint, auto-login returning players |
-| `/api/session` | GET | Check current session status |
-| `/api/logout` | POST | Logout current player |
-
-### Game
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/game/start` | POST | Start a new game session, returns server seed |
-| `/api/score` | POST | Submit game score with moves, heartbeats, and validation data |
-
-### Leaderboards and Stats
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/halloffame` | GET | Get top scores (query: `?limit=10`) |
-| `/api/hallofshame` | GET | Get caught cheaters (query: `?limit=50`) |
-| `/api/player/stats` | GET | Get current player statistics |
-| `/api/stats` | GET | Get global game statistics |
-
-### Neural Network Anti-Cheat (Admin)
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/ml/status` | GET | Training status, active model info, edge case statistics |
-| `/api/ml/versions` | GET | All model versions with accuracy/precision/recall/F1 metrics |
-| `/api/ml/training-logs` | GET | Training event history (query: `?limit=50`) |
-| `/api/ml/edge-cases` | GET | Cases where neural network and rules disagreed (query: `?limit=50`) |
-| `/api/ml/train` | POST | Trigger manual model retraining |
-
-## Installation
-
-### Prerequisites
-
-- Node.js 18+ (for local installation)
-- Docker (for containerized deployment)
+## Quick Start
 
 ### Local Installation
 
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/SuperSonnix71/Xnake.git
-   cd Xnake
-   ```
-
-2. Install dependencies:
-   ```bash
-   npm install
-   ```
-
-3. Start the server:
-   ```bash
-   npm start
-   ```
-
-4. Open your browser and navigate to:
-   ```
-   http://localhost:3333
-   ```
-
-### Development Mode
-
-Run with auto-restart on file changes:
 ```bash
-npm run dev
+git clone https://github.com/SuperSonnix71/Xnake.git
+cd Xnake
+npm install
+npm start
 ```
 
-### Neural Network Training
-
-The neural network trains automatically:
-- **On first startup**: Trains an initial model using synthetic data
-- **On cheat detection**: Retrains with real gameplay data (5-minute debounce)
-- **No manual intervention required**
-
-Manual training is also available if needed:
-```bash
-npm run ml:train              # Quick training (50 epochs)
-npm run ml:train:full         # Full training (100 epochs, 200+ samples)
-curl -X POST http://localhost:3333/api/ml/train  # Via API
-```
+Open `http://localhost:3333` in your browser.
 
 ### Docker Deployment
-
-Use the included deploy script for a complete Docker deployment:
 
 ```bash
 chmod +x deploy.sh
 ./deploy.sh
 ```
 
-The deploy script will:
-- Stop and remove any existing container
-- Remove the old Docker image
-- Build a fresh Docker image
-- Start the container with persistent storage
-- Display access URLs when complete
-
 The game will be available at `http://localhost:3333`
 
-### Manual Docker Commands
+### Development Mode
 
-Build the image:
 ```bash
-docker build -t xnake-game .
+npm run dev
 ```
 
-Run with persistent storage:
+## API Endpoints
+
+### Authentication
+- `POST /api/register` - Register new player
+- `POST /api/verify` - Verify session and auto-login
+- `GET /api/session` - Check session status
+- `POST /api/logout` - Logout player
+
+### Game
+- `POST /api/game/start` - Start new game session
+- `POST /api/score` - Submit game score
+
+### Leaderboards
+- `GET /api/halloffame` - Top scores
+- `GET /api/hallofshame` - Caught cheaters
+- `GET /api/player/stats` - Player statistics
+- `GET /api/stats` - Global statistics
+
+### ML Anti-Cheat (Admin)
+- `GET /api/ml/status` - Training status and edge cases
+- `GET /api/ml/scheduler/status` - Scheduler status and configuration
+- `GET /api/ml/versions` - All model versions with metrics
+- `GET /api/ml/training-logs` - Training event history
+- `GET /api/ml/edge-cases` - Edge case logs
+- `POST /api/ml/train` - Manual retraining trigger
+
+## Testing
+
 ```bash
-docker run -d -p 3333:3000 -v $(pwd):/app --name xnake xnake-game
+node test/test-accuracy.js        # Model accuracy on synthetic data
+node test/test-scheduler.js       # Scheduler configuration
+node test/test-integration.js     # End-to-end integration tests
+node test/test-server-startup.js  # Server startup with scheduler
 ```
 
-Run without persistent storage:
-```bash
-docker run -d -p 3333:3000 --name xnake xnake-game
-```
-
-Container management:
-```bash
-docker stop xnake      # Stop the container
-docker start xnake     # Start the container
-docker restart xnake   # Restart the container
-docker rm xnake        # Remove the container
-docker logs xnake      # View logs
-```
-
-## Configuration
-
-### Environment Variables
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `PORT` | 3333 | Server port |
-| `SESSION_SECRET` | (hardcoded) | Session encryption key (change in production) |
-
-### Production Considerations
-
-1. Set a secure `SESSION_SECRET` environment variable
-2. Enable HTTPS and set `secure: true` in session cookie config
-3. Use a reverse proxy (nginx) for SSL termination
-4. Regular database backups of `xnake.db`
-
-## Project Structure
-
-```
-snake/
-├── public/
-│   ├── index.html          # Game interface
-│   ├── game.js             # Game logic and rendering
-│   ├── fingerprint.js      # Browser fingerprinting
-│   └── style.css           # Styles and animations
-├── ml/
-│   ├── features.js         # Feature extraction (12 behavioral features)
-│   ├── model.js            # TensorFlow.js neural network
-│   ├── train.js            # Training pipeline with metrics
-│   ├── versioning.js       # Model versioning and rollback
-│   ├── shap.js             # SHAP explainability (Kernel SHAP)
-│   ├── worker.js           # Background training worker
-│   ├── edgecases.js        # Edge case detection and logging
-│   └── models/             # Trained models (git-excluded)
-│       └── cheat_detector/ # Active model
-├── scripts/
-│   ├── init-ml-versioning.js  # Initialize neural network versioning system
-│   ├── clean_false_positives.js
-│   ├── monitor.sh
-│   └── reset-db.sh
-├── server.js               # Express server with API and anti-cheat
-├── database.js             # SQLite database operations
-├── package.json            # Node.js dependencies
-├── Dockerfile              # Docker configuration
-├── deploy.sh               # Docker build and deploy script
-├── eslint.config.js        # ESLint configuration
-├── tsconfig.json           # TypeScript configuration (for type checking)
-├── xnake.db                # SQLite database file (auto-created)
-├── game_activity.log       # Valid game submissions log
-└── cheat_detection.log     # Cheat detection log
-```
-
-## How to Play
-
-### Controls
+## Controls
 
 | Key | Action |
 |-----|--------|
@@ -313,45 +148,52 @@ snake/
 | Arrow Right / D | Move Right |
 | Space | Pause/Unpause |
 
-### Gameplay
+## Project Structure
 
-- Eat the glowing food to grow and score points (+10 per food)
-- Avoid hitting the walls or yourself
-- Game speed increases as your score goes up
-- Try to reach the top of the Hall of Fame
-
-### Speed System
-
-- Initial Speed: 150ms per move
-- Speed Increase: 3ms faster for each food eaten
-- Minimum Speed: 50ms per move (maximum difficulty)
+```
+snake/
+├── public/             # Frontend files
+│   ├── index.html      # Game interface
+│   ├── game.js         # Game logic
+│   ├── fingerprint.js  # Browser fingerprinting
+│   └── style.css       # Styles
+├── ml/                 # ML anti-cheat system
+│   ├── features.js     # Feature extraction
+│   ├── model.js        # Neural network
+│   ├── train.js        # Training pipeline
+│   ├── scheduler.js    # Periodic retraining scheduler
+│   ├── worker.js       # Background training
+│   ├── edgecases.js    # Edge case logging
+│   ├── versioning.js   # Model versioning
+│   └── shap.js         # Explainability
+├── test/               # Test suite
+│   ├── test-accuracy.js
+│   ├── test-scheduler.js
+│   ├── test-integration.js
+│   └── test-server-startup.js
+├── server.js           # Express server
+├── database.js         # SQLite operations
+└── xnake.db            # Database (auto-created)
+```
 
 ## Technology Stack
 
-### Backend
-- Node.js with Express
-- express-session for session management
-- sql.js (pure JavaScript SQLite)
-- uuid for unique ID generation
-- TensorFlow.js for neural network-based cheat detection
+**Backend:** Node.js, Express, sql.js, TensorFlow.js  
+**Frontend:** HTML5 Canvas, Vanilla JavaScript, CSS3  
+**Code Quality:** ESLint, TypeScript (type checking)
 
-### Frontend
-- HTML5 Canvas for game rendering
-- Vanilla JavaScript for game logic
-- CSS3 for styling and animations
+## Configuration
 
-### Code Quality
-- ESLint with security and Node.js plugins
-- TypeScript for type checking (via JSDoc annotations)
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `PORT` | 3333 | Server port |
+| `SESSION_SECRET` | (hardcoded) | Session encryption key |
+
+**Production:** Set secure `SESSION_SECRET`, enable HTTPS, use reverse proxy (nginx), backup `xnake.db` regularly.
 
 ## Author
 
 Developed by Sonny Mir
-
-## Bug Reports
-
-Found a bug or have a feature request? Please open an issue at:
-https://github.com/SuperSonnix71/Xnake/issues
 
 ## License
 

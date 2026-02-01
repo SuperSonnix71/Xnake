@@ -10,6 +10,7 @@ const { onCheatDetected, getTrainingStatus, triggerTraining } = require('./ml/wo
 const { train: trainModel } = require('./ml/train');
 const { processAndLogEdgeCase, getEdgeCases, getEdgeCaseStats } = require('./ml/edgecases');
 const { getActiveVersion, getAllVersions, getTrainingLogs } = require('./ml/versioning');
+const { startScheduler, stopScheduler, getSchedulerStatus } = require('./ml/scheduler');
 
 /** @typedef {import('express').Request} Request */
 /** @typedef {import('express').Response} Response */
@@ -1276,6 +1277,18 @@ app.get('/api/ml/edge-cases', (req, res) => {
   res.json({ cases, stats });
 });
 
+app.get('/api/ml/scheduler/status', (_req, res) => {
+  const schedulerStatus = getSchedulerStatus();
+  const trainingStatus = getTrainingStatus();
+  const edgeCaseStats = getEdgeCaseStats();
+  
+  res.json({
+    scheduler: schedulerStatus,
+    training: trainingStatus,
+    edgeCases: edgeCaseStats
+  });
+});
+
 app.post('/api/ml/train', async (req, res) => {
   const result = await triggerTraining();
   res.json(result);
@@ -1314,10 +1327,14 @@ async function startServer() {
       console.log(`🌐 Open your browser and navigate to: http://localhost:${PORT}`);
       console.log(`🎮 Use Arrow Keys or WASD to control the snake`);
       console.log(`🏆 Hall of Fame enabled with persistent scores!`);
+      
+      // Start periodic edge case-based retraining scheduler
+      startScheduler();
     });
 
     process.on('SIGTERM', () => {
       console.log('SIGTERM signal received: closing HTTP server');
+      stopScheduler();
       server.close(() => {
         console.log('HTTP server closed');
         closeDatabase();
@@ -1327,6 +1344,7 @@ async function startServer() {
 
     process.on('SIGINT', () => {
       console.log('SIGINT signal received: closing HTTP server');
+      stopScheduler();
       server.close(() => {
         console.log('HTTP server closed');
         closeDatabase();
