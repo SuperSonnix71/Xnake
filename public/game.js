@@ -562,18 +562,20 @@
                     const cheatTypeLabels = {
                         'score_mismatch': 'Score Tampering',
                         'speed_hack': 'Speed Hacking',
-                        'replay_fail': 'Invalid Game Replay',
+                        'memory_manipulation': 'Memory Manipulation',
                         'invalid_session': 'Session Tampering',
                         'missing_moves': 'Missing Move Data',
                         'timing_invalid': 'Suspicious Timing',
                         'pause_abuse': 'Game Pausing',
                         'timing_manipulation': 'Game Speed Manipulation',
-                        'bot_usage': 'AI/Bot Usage'
+                        'bot_usage': 'AI/Bot Usage',
+                        'ml_detection': 'ML Anti-Cheat Detection',
+                        'missing_heartbeats': 'Missing Game Data'
                     };
                     
                     let cheatLabel = cheatTypeLabels[entry.cheat_type] || entry.cheat_type;
                     
-                    if (entry.cheat_type === 'replay_fail' && entry.reason) {
+                    if (entry.cheat_type === 'memory_manipulation' && entry.reason) {
                         if (entry.reason.includes('duration mismatch')) {
                             cheatLabel = 'Time Manipulation';
                         } else if (entry.reason.includes('Score mismatch')) {

@@ -1009,7 +1009,7 @@ app.post('/api/score', async (req, res) => {
     logCheatDetection(
       player.username,
       ipAddress,
-      'replay_fail',
+      'memory_manipulation',
       score,
       validation.reason || 'Unknown validation error',
       `Food: ${foodEaten} | Duration: ${gameDuration}s | Frames: ${totalFrames} | Summary: ${JSON.stringify(validation.log.summary)}`
@@ -1035,9 +1035,9 @@ app.post('/api/score', async (req, res) => {
     
     console.log(`=====================================\n`);
     
-    cheaterOps.record(sessionData.playerId, player.username, ipAddress, fingerprint, 'replay_fail', score, validation.reason || 'Unknown');
-    saveMLTrainingData(sessionData.playerId, score, true, 'replay_fail', parsedMoves, parsedHeartbeats, foodEaten, gameDuration);
-    onCheatDetected('replay_fail', { score, gameDuration, foodEaten });
+    cheaterOps.record(sessionData.playerId, player.username, ipAddress, fingerprint, 'memory_manipulation', score, validation.reason || 'Unknown');
+    saveMLTrainingData(sessionData.playerId, score, true, 'memory_manipulation', parsedMoves, parsedHeartbeats, foodEaten, gameDuration);
+    onCheatDetected('memory_manipulation', { score, gameDuration, foodEaten });
     return res.status(400).json({ error: `Game validation failed: ${validation.reason}` });
   }
   
