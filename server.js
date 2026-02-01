@@ -1112,6 +1112,33 @@ app.post('/api/score', async (req, res) => {
           features
         );
         
+        if (mlPrediction > 0.75) {
+          const player = playerOps.findById(sessionData.playerId);
+          if (!player) {
+            return res.status(401).json({ error: 'Player not found' });
+          }
+          const ipAddress = getClientIP(req);
+          
+          console.log(`[CHEAT DETECTED] ML Anti-Cheat: ${player.username} - Score: ${score} - ML: ${(mlPrediction * 100).toFixed(1)}% cheat probability`);
+          
+          cheaterOps.record(
+            sessionData.playerId,
+            player.username,
+            ipAddress,
+            fingerprint,
+            'ml_detection',
+            score,
+            `ML detected cheat with ${(mlPrediction * 100).toFixed(1)}% confidence`
+          );
+          
+          saveMLTrainingData(sessionData.playerId, score, true, 'ml_detection', parsedMoves, parsedHeartbeats, foodEaten, gameDuration);
+          
+          return res.status(400).json({ 
+            error: 'Suspicious gameplay detected',
+            reason: 'ml_detection'
+          });
+        }
+        
         if (edgeResult.shouldFlag) {
           const player = playerOps.findById(sessionData.playerId);
           if (player) {

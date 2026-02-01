@@ -156,7 +156,7 @@ function getEdgeCaseStats() {
  * - trust_rules: Use rule-based detection as ground truth
  * - trust_ml: Trust ML when confident (>70% or <30%), treat middle as uncertain
  * - conservative: Only use cases where both rules and ML agree
- * - hybrid: Trust rules OR high-confidence ML (>85%), best for catching missed cheats
+ * - hybrid: Trust rules OR high-confidence ML (>75%), best for catching missed cheats
  * 
  * @param {'trust_rules'|'trust_ml'|'conservative'|'hybrid'} strategy
  * @returns {{ legitimate: EdgeCase[], cheats: EdgeCase[], uncertain: EdgeCase[] }}
@@ -191,7 +191,7 @@ function classifyEdgeCases(strategy = 'conservative') {
         legitimate.push(c);
       }
     } else if (strategy === 'hybrid') {
-      if (isRulesCheat || (c.mlProbability > 0.85)) {
+      if (isRulesCheat || (c.mlProbability > 0.75)) {
         cheats.push(c);
       } else if (c.mlProbability < 0.15 || (!isRulesCheat && c.mlProbability < ML_THRESHOLD_LOW)) {
         legitimate.push(c);
