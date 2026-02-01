@@ -767,6 +767,17 @@ app.post('/api/score', async (req, res) => {
     }
   }
 
+  if (score > 200 && (!heartbeats || typeof heartbeats !== 'string' || heartbeats.length === 0)) {
+    const player = playerOps.findById(sessionData.playerId);
+    if (!player) {
+      return res.status(401).json({ error: 'Player not found' });
+    }
+    const ipAddress = getClientIP(req);
+    console.log(`[CHEAT DETECTED] Player: ${player.username} - Missing heartbeat data for score ${score}`);
+    cheaterOps.record(sessionData.playerId, player.username, ipAddress, fingerprint, 'missing_heartbeats', score, `No heartbeat data submitted for score ${score}`);
+    return res.status(400).json({ error: 'Missing required game data' });
+  }
+
   if (cheaterOps.isKnownCheater(sessionData.playerId)) {
     const cheatCount = cheaterOps.getCheatCount(sessionData.playerId);
     console.log(`[WARNING] Known cheater submitting score: ${sessionData.playerId} (${cheatCount} prior offenses)`);
