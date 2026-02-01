@@ -769,9 +769,7 @@ app.post('/api/score', async (req, res) => {
 
   if (cheaterOps.isKnownCheater(sessionData.playerId)) {
     const cheatCount = cheaterOps.getCheatCount(sessionData.playerId);
-    const player = playerOps.findById(sessionData.playerId);
-    console.log(`[CHEAT DETECTED] Known cheater attempting to submit score: ${player?.username || 'Unknown'} (${sessionData.playerId}) - ${cheatCount} prior offenses`);
-    return res.status(403).json({ error: 'Access denied: Known cheater' });
+    console.log(`[WARNING] Known cheater submitting score: ${sessionData.playerId} (${cheatCount} prior offenses)`);
   }
 
   if (foodEaten) {
