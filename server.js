@@ -746,7 +746,7 @@ app.post('/api/score', async (req, res) => {
     return res.status(400).json({ error: 'Move data too large' });
   }
 
-  if (typeof heartbeats === 'string' && heartbeats.length > 10000) {
+  if (typeof heartbeats === 'string' && heartbeats.length > 50000) {
     return res.status(400).json({ error: 'Heartbeat data too large' });
   }
 
