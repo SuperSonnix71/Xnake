@@ -589,9 +589,26 @@ app.post('/api/register', (req, res) => {
 
   const existingByFingerprint = playerOps.findByFingerprint(fingerprint);
   if (existingByFingerprint) {
-    return res.status(400).json({ 
-      error: 'This device is already registered',
-      existingUsername: existingByFingerprint.username
+    /** @type {any} */
+    const sessionData = req.session;
+    sessionData.playerId = existingByFingerprint.id;
+    sessionData.username = existingByFingerprint.username;
+    playerOps.updateLastSeen(existingByFingerprint.id);
+
+    const bestScore = scoreOps.getBestScore(existingByFingerprint.id);
+    const totalGames = scoreOps.getTotalGames(existingByFingerprint.id);
+    const rank = scoreOps.getPlayerRank(existingByFingerprint.id);
+
+    return res.json({
+      success: true,
+      existingPlayer: true,
+      player: {
+        id: existingByFingerprint.id,
+        username: existingByFingerprint.username,
+        bestScore,
+        totalGames,
+        rank
+      }
     });
   }
 

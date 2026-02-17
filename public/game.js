@@ -123,9 +123,11 @@
             
             if (data.success) {
                 playerData = data.player;
-                playerData.bestScore = 0;
-                playerData.totalGames = 0;
-                playerData.rank = null;
+                if (!data.existingPlayer) {
+                    playerData.bestScore = 0;
+                    playerData.totalGames = 0;
+                    playerData.rank = null;
+                }
                 updatePlayerUI();
                 document.getElementById('registrationScreen').classList.add('hidden');
             } else {
