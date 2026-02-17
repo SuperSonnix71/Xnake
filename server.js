@@ -308,25 +308,8 @@ function detectBotUsage(moves, foodEaten, score) {
   if (!moves || !foodEaten || foodEaten === 0) {
     return { isBot: false };
   }
-  
+
   const movesPerFood = moves.length / foodEaten;
-  
-  if (score > 1000 && movesPerFood > 4.0) {
-    return {
-      isBot: true,
-      reason: `Impossible score with bot-like move patterns (${movesPerFood.toFixed(2)} moves per food)`,
-      movesPerFood,
-      details: {
-        score,
-        moves: moves.length,
-        foodEaten,
-        movesPerFood: movesPerFood.toFixed(2),
-        threshold: 4.0,
-        humanAverage: '2.0-3.5'
-      }
-    };
-  }
-  
   return { isBot: false, movesPerFood };
 }
 
