@@ -1,7 +1,7 @@
 const tf = require('@tensorflow/tfjs');
 const { initializeDatabase, mlOps, closeDatabase } = require('../database');
 const { extractFeatures, featuresToArray, computeNormalizationStats, normalizeFeatures } = require('./features');
-const { createSimpleModel, saveModel } = require('./model');
+const { createModel, createSimpleModel, saveModel } = require('./model');
 const { convertEdgeCasesToTrainingData } = require('./edgecases');
 
 /**
@@ -224,7 +224,7 @@ async function train(options = {}) {
   }
   
   if (augmentWithSynthetic && (stats.total + edgeCaseData.samples.length) < minSamples) {
-    const neededSamples = minSamples - stats.total;
+    const neededSamples = minSamples - stats.total - edgeCaseData.samples.length;
     const neededCheats = Math.max(0, Math.ceil(neededSamples / 2) - stats.cheats);
     const neededLegit = Math.max(0, Math.ceil(neededSamples / 2) - stats.legitimate);
     
@@ -248,7 +248,6 @@ async function train(options = {}) {
   
   if (allFeatures.length < 10) {
     console.log('[ML Training] Not enough samples to train. Need at least 10 samples.');
-    await closeDatabase();
     return { accuracy: 0, loss: 1, samples: allFeatures.length };
   }
   
@@ -268,7 +267,7 @@ async function train(options = {}) {
   
   console.log(`[ML Training] Training with ${xTrain.length} samples, validating with ${xVal.length} samples`);
   
-  const model = useSimpleModel ? createSimpleModel() : createSimpleModel();
+  const model = useSimpleModel ? createSimpleModel() : createModel();
   
   const xTrainTensor = tf.tensor2d(xTrain);
   const yTrainTensor = tf.tensor1d(yTrain);
@@ -282,14 +281,17 @@ async function train(options = {}) {
     callbacks: {
       onEpochEnd: (/** @type {number} */ epoch, /** @type {any} */ logs) => {
         if ((epoch + 1) % 10 === 0) {
-          console.log(`[ML Training] Epoch ${epoch + 1}/${epochs} - loss: ${logs.loss.toFixed(4)}, acc: ${logs.acc.toFixed(4)}, val_loss: ${logs.val_loss.toFixed(4)}, val_acc: ${logs.val_acc.toFixed(4)}`);
+          const acc = logs.acc ?? logs.accuracy ?? 0;
+          const valAcc = logs.val_acc ?? logs.val_accuracy ?? 0;
+          console.log(`[ML Training] Epoch ${epoch + 1}/${epochs} - loss: ${logs.loss.toFixed(4)}, acc: ${acc.toFixed(4)}, val_loss: ${logs.val_loss.toFixed(4)}, val_acc: ${valAcc.toFixed(4)}`);
         }
       }
     }
   });
   
   const finalLoss = /** @type {number} */ (history.history.val_loss[history.history.val_loss.length - 1]);
-  const finalAcc = /** @type {number} */ (history.history.val_acc[history.history.val_acc.length - 1]);
+  const valAccHistory = history.history.val_acc || history.history.val_accuracy;
+  const finalAcc = /** @type {number} */ (valAccHistory[valAccHistory.length - 1]);
   
   const predTensor = /** @type {tf.Tensor} */ (model.predict(xValTensor));
   const predictions = await predTensor.data();
@@ -320,8 +322,6 @@ async function train(options = {}) {
   yTrainTensor.dispose();
   xValTensor.dispose();
   yValTensor.dispose();
-  
-  await closeDatabase();
   
   const result = {
     accuracy: finalAcc,
@@ -358,11 +358,13 @@ if (require.main === module) {
     epochs,
     minSamples,
     augmentWithSynthetic: !noSynthetic
-  }).then((/** @type {any} */ result) => {
+  }).then(async (/** @type {any} */ result) => {
     console.log('[ML Training] Done:', result);
+    await closeDatabase();
     process.exit(0);
-  }).catch((/** @type {Error} */ err) => {
+  }).catch(async (/** @type {Error} */ err) => {
     console.error('[ML Training] Error:', err);
+    await closeDatabase();
     process.exit(1);
   });
 }

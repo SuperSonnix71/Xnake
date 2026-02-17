@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const { clearCache } = require('./model');
 
 const MODELS_DIR = path.join(__dirname, 'models');
 const VERSIONS_FILE = path.join(MODELS_DIR, 'versions.json');
@@ -85,11 +86,16 @@ function getAllVersions() {
 function createNewVersion(metrics) {
   const versionId = generateVersionId();
   const versionPath = path.join(MODELS_DIR, versionId);
-  
+
   if (!fs.existsSync(versionPath)) {
     fs.mkdirSync(versionPath, { recursive: true });
   }
-  
+
+  const activeModelDir = path.join(MODELS_DIR, 'cheat_detector');
+  if (fs.existsSync(activeModelDir)) {
+    copyDirectory(activeModelDir, versionPath);
+  }
+
   /** @type {ModelVersion} */
   const newVersion = {
     version: versionId,
@@ -98,11 +104,11 @@ function createNewVersion(metrics) {
     isActive: false,
     path: versionPath
   };
-  
+
   const data = loadVersionsFile();
   data.versions.push(newVersion);
   saveVersionsFile(data);
-  
+
   return { version: versionId, path: versionPath };
 }
 
@@ -128,7 +134,9 @@ function activateVersion(versionId) {
   }
   
   copyDirectory(version.path, activeLink);
-  
+
+  clearCache();
+
   return true;
 }
 
@@ -182,13 +190,14 @@ function compareMetrics(newMetrics, oldMetrics) {
  */
 function rollbackToPreviousVersion() {
   const data = loadVersionsFile();
-  const currentIdx = data.versions.findIndex(v => v.version === data.activeVersion);
-  
+  const sorted = [...data.versions].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+  const currentIdx = sorted.findIndex(v => v.version === data.activeVersion);
+
   if (currentIdx <= 0) {
     return null;
   }
-  
-  const previousVersion = data.versions[currentIdx - 1];
+
+  const previousVersion = sorted[currentIdx - 1];
   activateVersion(previousVersion.version);
   return previousVersion.version;
 }

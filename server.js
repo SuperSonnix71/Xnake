@@ -3,9 +3,10 @@ const express = require('express');
 const session = require('express-session');
 const path = require('path');
 const fs = require('fs');
+const tf = require('@tensorflow/tfjs');
 const { initializeDatabase, playerOps, scoreOps, statsOps, cheaterOps, mlOps, closeDatabase } = require('./database');
 const { extractFeatures, featuresToArray, normalizeFeatures, createTimeSeriesFeatures } = require('./ml/features');
-const { predict, loadModel, isModelAvailable } = require('./ml/model');
+const { loadModel, isModelAvailable } = require('./ml/model');
 const { onCheatDetected, getTrainingStatus, triggerTraining } = require('./ml/worker');
 const { train: trainModel } = require('./ml/train');
 const { processAndLogEdgeCase, getEdgeCases, getEdgeCaseStats } = require('./ml/edgecases');
@@ -301,10 +302,10 @@ function validateHeartbeats(heartbeats, _gameDuration, _totalFrames) {
 /**
  * @param {Move[]} moves
  * @param {number} foodEaten
- * @param {number} score
+ * @param {number} _score
  * @returns {BotDetectionResult}
  */
-function detectBotUsage(moves, foodEaten, score) {
+function detectBotUsage(moves, foodEaten, _score) {
   if (!moves || !foodEaten || foodEaten === 0) {
     return { isBot: false };
   }
@@ -893,6 +894,27 @@ app.post('/api/score', async (req, res) => {
     }).filter((/** @type {any} */ h) => h !== null);
   }
 
+  let earlyMlPrediction = -1;
+  let earlyFeatures = null;
+  if (isModelAvailable() && score >= 50 && parsedMoves.length > 0) {
+    try {
+      const earlyLoaded = await loadModel();
+      if (earlyLoaded) {
+        earlyFeatures = extractFeatures(parsedMoves, parsedHeartbeats, score, foodEaten, gameDuration);
+        const earlyFeatureArray = featuresToArray(earlyFeatures);
+        const earlyNormalized = normalizeFeatures(earlyFeatureArray, /** @type {any} */ (earlyLoaded.stats));
+        const earlyFeatureTensor = tf.tensor2d([earlyNormalized]);
+        const earlyPredTensor = /** @type {tf.Tensor} */ (earlyLoaded.model.predict(earlyFeatureTensor));
+        const earlyPredData = await earlyPredTensor.data();
+        earlyMlPrediction = earlyPredData[0];
+        earlyFeatureTensor.dispose();
+        earlyPredTensor.dispose();
+      }
+    } catch (_err) {
+      // noop
+    }
+  }
+
   if (heartbeats && typeof heartbeats === 'string' && heartbeats.length > 0 && score > 100) {
     const rawHeartbeats = heartbeats.split(';').map((/** @type {string} */ hb) => hb.trim()).filter((/** @type {string} */ hb) => hb.length > 0);
     const heartbeatCheck = validateHeartbeats(rawHeartbeats, gameDuration, totalFrames);
@@ -934,9 +956,12 @@ app.post('/api/score', async (req, res) => {
       
       saveMLTrainingData(sessionData.playerId, score, true, 'timing_manipulation', parsedMoves, parsedHeartbeats, foodEaten, gameDuration);
       onCheatDetected('timing_manipulation', { score, gameDuration, foodEaten });
-      
-      return res.status(400).json({ 
-        error: 'Game timing validation failed. Please ensure you are playing at normal speed without modifications.' 
+      if (earlyMlPrediction >= 0 && earlyFeatures) {
+        processAndLogEdgeCase(sessionData.playerId, score, true, 'timing_manipulation', earlyMlPrediction, earlyFeatures);
+      }
+
+      return res.status(400).json({
+        error: 'Game timing validation failed. Please ensure you are playing at normal speed without modifications.'
       });
     }
     
@@ -992,9 +1017,12 @@ app.post('/api/score', async (req, res) => {
     
     saveMLTrainingData(sessionData.playerId, score, true, 'pause_abuse', parsedMoves, parsedHeartbeats, foodEaten, gameDuration);
     onCheatDetected('pause_abuse', { score, gameDuration, foodEaten });
-    
-    return res.status(400).json({ 
-      error: 'Game pausing detected. Play without pausing to submit scores.' 
+    if (earlyMlPrediction >= 0 && earlyFeatures) {
+      processAndLogEdgeCase(sessionData.playerId, score, true, 'pause_abuse', earlyMlPrediction, earlyFeatures);
+    }
+
+    return res.status(400).json({
+      error: 'Game pausing detected. Play without pausing to submit scores.'
     });
   }
 
@@ -1039,6 +1067,9 @@ app.post('/api/score', async (req, res) => {
     cheaterOps.record(sessionData.playerId, player.username, ipAddress, fingerprint, 'memory_manipulation', score, validation.reason || 'Unknown');
     saveMLTrainingData(sessionData.playerId, score, true, 'memory_manipulation', parsedMoves, parsedHeartbeats, foodEaten, gameDuration);
     onCheatDetected('memory_manipulation', { score, gameDuration, foodEaten });
+    if (earlyMlPrediction >= 0 && earlyFeatures) {
+      processAndLogEdgeCase(sessionData.playerId, score, true, 'memory_manipulation', earlyMlPrediction, earlyFeatures);
+    }
     return res.status(400).json({ error: `Game validation failed: ${validation.reason}` });
   }
   
@@ -1082,9 +1113,12 @@ app.post('/api/score', async (req, res) => {
     
     saveMLTrainingData(sessionData.playerId, score, true, 'bot_usage', parsedMoves, parsedHeartbeats, foodEaten, gameDuration);
     onCheatDetected('bot_usage', { score, gameDuration, foodEaten });
-    
-    return res.status(400).json({ 
-      error: 'AI/Bot usage detected. Human players cannot achieve this score with these move patterns.' 
+    if (earlyMlPrediction >= 0 && earlyFeatures) {
+      processAndLogEdgeCase(sessionData.playerId, score, true, 'bot_usage', earlyMlPrediction, earlyFeatures);
+    }
+
+    return res.status(400).json({
+      error: 'AI/Bot usage detected. Human players cannot achieve this score with these move patterns.'
     });
   }
   
@@ -1096,12 +1130,29 @@ app.post('/api/score', async (req, res) => {
     try {
       const loaded = await loadModel();
       if (loaded) {
-        features = extractFeatures(parsedMoves, parsedHeartbeats, score, foodEaten, gameDuration);
+        features = earlyFeatures || extractFeatures(parsedMoves, parsedHeartbeats, score, foodEaten, gameDuration);
         const featureArray = featuresToArray(features);
         const normalized = normalizeFeatures(featureArray, /** @type {any} */ (loaded.stats));
         const timeSeries = createTimeSeriesFeatures(parsedMoves, parsedHeartbeats);
-        
-        mlPrediction = await predict(normalized, timeSeries);
+
+        const isHybridModel = loaded.model.inputs.length === 2;
+        if (isHybridModel) {
+          const featureTensor = tf.tensor2d([normalized]);
+          const tsTensor = tf.tensor3d([timeSeries]);
+          const predTensor = /** @type {tf.Tensor} */ (loaded.model.predict([featureTensor, tsTensor]));
+          const predData = await predTensor.data();
+          mlPrediction = predData[0];
+          featureTensor.dispose();
+          tsTensor.dispose();
+          predTensor.dispose();
+        } else {
+          const featureTensor = tf.tensor2d([normalized]);
+          const predTensor = /** @type {tf.Tensor} */ (loaded.model.predict(featureTensor));
+          const predData = await predTensor.data();
+          mlPrediction = predData[0];
+          featureTensor.dispose();
+          predTensor.dispose();
+        }
         mlSuspicious = mlPrediction > 0.7;
         
         const edgeResult = processAndLogEdgeCase(
@@ -1185,7 +1236,9 @@ app.post('/api/score', async (req, res) => {
   activeSessions.delete(sessionData.playerId);
 
   scoreOps.add(sessionData.playerId, score, speedLevel);
-  saveMLTrainingData(sessionData.playerId, score, false, null, parsedMoves, parsedHeartbeats, foodEaten, gameDuration);
+  if (!mlSuspicious) {
+    saveMLTrainingData(sessionData.playerId, score, false, null, parsedMoves, parsedHeartbeats, foodEaten, gameDuration);
+  }
   
   const bestScore = scoreOps.getBestScore(sessionData.playerId);
   const rank = scoreOps.getPlayerRank(sessionData.playerId);

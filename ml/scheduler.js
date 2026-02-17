@@ -74,8 +74,9 @@ async function periodicCheck() {
         console.log(`  - ${type}: ${count}`);
       });
       
+      lastScheduledRetrainingTime = Date.now();
       const result = await triggerTraining();
-      
+
       if (result.success) {
         console.log(`[ML Scheduler] ✓ Retraining completed successfully`);
         console.log(`[ML Scheduler] New model version: ${result.version}`);
@@ -83,9 +84,8 @@ async function periodicCheck() {
           const { accuracy, f1Score } = /** @type {any} */ (result.metrics);
           console.log(`[ML Scheduler] Accuracy: ${(accuracy * 100).toFixed(1)}%, F1: ${(f1Score * 100).toFixed(1)}%`);
         }
-        
+
         lastEdgeCaseCount = check.edgeCaseCount;
-        lastScheduledRetrainingTime = Date.now();
       } else {
         console.log(`[ML Scheduler] Retraining failed: ${result.message}`);
       }
@@ -145,12 +145,14 @@ function getSchedulerStatus() {
 }
 
 function updateConfig(/** @type {any} */ updates) {
+  const savedCount = lastEdgeCaseCount;
   Object.assign(RETRAINING_CONFIG, updates);
   console.log('[ML Scheduler] Configuration updated:', updates);
-  
+
   if (schedulerInterval) {
     stopScheduler();
     startScheduler();
+    lastEdgeCaseCount = savedCount;
   }
 }
 

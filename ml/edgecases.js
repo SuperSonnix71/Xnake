@@ -2,8 +2,28 @@ const fs = require('fs');
 const path = require('path');
 
 const EDGE_CASES_LOG = path.join(__dirname, 'models', 'edge_cases.log');
+const EDGE_CASES_META = path.join(__dirname, 'models', 'edge_cases_meta.json');
 const ML_THRESHOLD_HIGH = 0.7;
 const ML_THRESHOLD_LOW = 0.3;
+
+function loadMeta() {
+  if (!fs.existsSync(EDGE_CASES_META)) {
+    return { total: 0, byType: {} };
+  }
+  try {
+    return JSON.parse(fs.readFileSync(EDGE_CASES_META, 'utf8'));
+  } catch (_e) {
+    return { total: 0, byType: {} };
+  }
+}
+
+function saveMeta(/** @type {any} */ meta) {
+  const dir = path.dirname(EDGE_CASES_META);
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+  fs.writeFileSync(EDGE_CASES_META, JSON.stringify(meta));
+}
 
 /**
  * @typedef {Object} EdgeCase
@@ -71,9 +91,14 @@ function logEdgeCase(edgeCase) {
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
   }
-  
+
   const logLine = `${JSON.stringify(edgeCase)}\n`;
   fs.appendFileSync(EDGE_CASES_LOG, logLine);
+
+  const meta = loadMeta();
+  meta.total++;
+  meta.byType[edgeCase.edgeType] = (meta.byType[edgeCase.edgeType] || 0) + 1;
+  saveMeta(meta);
 }
 
 /**
@@ -136,19 +161,7 @@ function getEdgeCases(limit = 100) {
  * @returns {{ total: number, byType: Object<string, number> }}
  */
 function getEdgeCaseStats() {
-  const cases = getEdgeCases(10000);
-  
-  /** @type {Object<string, number>} */
-  const byType = {};
-  
-  for (const c of cases) {
-    byType[c.edgeType] = (byType[c.edgeType] || 0) + 1;
-  }
-  
-  return {
-    total: cases.length,
-    byType
-  };
+  return loadMeta();
 }
 
 /**

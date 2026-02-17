@@ -38,12 +38,16 @@ async function kernelShap(model, instance, backgroundData, numSamples = 100) {
   const numFeatures = instance.length;
   const featureMeans = computeFeatureMeans(instance, backgroundData);
   
-  const basePredTensor = model.predict(tf.tensor2d([featureMeans]));
+  const baseInputTensor = tf.tensor2d([featureMeans]);
+  const basePredTensor = model.predict(baseInputTensor);
   const baseValue = (await /** @type {tf.Tensor} */ (basePredTensor).data())[0];
+  baseInputTensor.dispose();
   /** @type {tf.Tensor} */ (basePredTensor).dispose();
-  
-  const fullPredTensor = model.predict(tf.tensor2d([instance]));
+
+  const fullInputTensor = tf.tensor2d([instance]);
+  const fullPredTensor = model.predict(fullInputTensor);
   const prediction = (await /** @type {tf.Tensor} */ (fullPredTensor).data())[0];
+  fullInputTensor.dispose();
   /** @type {tf.Tensor} */ (fullPredTensor).dispose();
   
   const shapValues = new Array(numFeatures).fill(0);
@@ -57,7 +61,9 @@ async function kernelShap(model, instance, backgroundData, numSamples = 100) {
       continue;
     }
     
-    const coalitionWeight = 1 / (numFeatures * comb(numFeatures - 1, numInCoalition));
+    const denominator = numFeatures * comb(numFeatures - 1, numInCoalition);
+    if (denominator === 0) { continue; }
+    const coalitionWeight = 1 / denominator;
     
     const maskedInstance = instance.map((val, i) => {
       if (coalition[i]) {
@@ -65,18 +71,22 @@ async function kernelShap(model, instance, backgroundData, numSamples = 100) {
       }
       return featureMeans[i];
     });
-    const predTensor = model.predict(tf.tensor2d([maskedInstance]));
+    const maskedInputTensor = tf.tensor2d([maskedInstance]);
+    const predTensor = model.predict(maskedInputTensor);
     // eslint-disable-next-line no-await-in-loop
     const coalitionPred = (await /** @type {tf.Tensor} */ (predTensor).data())[0];
+    maskedInputTensor.dispose();
     /** @type {tf.Tensor} */ (predTensor).dispose();
-    
+
     for (let i = 0; i < numFeatures; i++) {
       if (coalition[i]) {
         const withoutI = [...maskedInstance];
         withoutI[i] = featureMeans[i];
-        const withoutTensor = model.predict(tf.tensor2d([withoutI]));
+        const withoutInputTensor = tf.tensor2d([withoutI]);
+        const withoutTensor = model.predict(withoutInputTensor);
         // eslint-disable-next-line no-await-in-loop
         const withoutPred = (await /** @type {tf.Tensor} */ (withoutTensor).data())[0];
+        withoutInputTensor.dispose();
         /** @type {tf.Tensor} */ (withoutTensor).dispose();
         
         const marginalContrib = coalitionPred - withoutPred;
